@@ -1,0 +1,83 @@
+plugins {
+    id 'eclipse'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '6.0.25'
+}
+
+version = '1.3.0'
+group = 'com.eternal_heart'
+archivesBaseName = 'eternal_heart'
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                eternal_heart {
+                    source sourceSets.main
+                }
+            }
+        }
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                eternal_heart {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+repositories {
+    maven {
+        url = "https://maven.theillusivec4.top/"
+    }
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:1.20.1-47.4.15"
+
+    // Curios API
+    implementation fg.deobf("top.theillusivec4.curios:curios-forge:5.14.1+1.20.1")
+    compileOnly fg.deobf("top.theillusivec4.curios:curios-forge:5.14.1+1.20.1:api")
+    runtimeOnly fg.deobf("top.theillusivec4.curios:curios-forge:5.14.1+1.20.1")
+
+    // MineFargo - local hard dependency
+    implementation fg.deobf(files("libs/mine_fargo-1.2.42-all.jar"))
+
+    // === 可选模组集成（运行时按需激活，编译期仅类型检查） ===
+    // FTB Ultimine - 连锁挖掘
+    compileOnly fg.deobf(files("libs/ftb-ultimine-forge-2001.1.8.jar"))
+    // Caelus - 鞘翅飞行 API
+    compileOnly fg.deobf(files("libs/caelus-forge-3.2.0+1.20.1.jar"))
+    // Pehkui - 体型缩放
+    compileOnly fg.deobf(files("libs/Pehkui-3.8.2+1.20.1-forge.jar"))
+}
+
+jar {
+    manifest {
+        attributes([
+            "Specification-Title": "eternal_heart",
+            "Specification-Vendor": "EternalHeart",
+            "Specification-Version": "1",
+            "Implementation-Title": project.name,
+            "Implementation-Version": project.jar.archiveVersion,
+            "Implementation-Vendor": "EternalHeart",
+        ])
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
