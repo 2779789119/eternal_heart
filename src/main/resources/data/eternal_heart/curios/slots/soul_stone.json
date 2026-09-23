@@ -1,0 +1,8 @@
+{
+  "name": "永恒之心",
+  "icon": "eternal_heart:eternal_heart",
+  "priority": 10,
+  "drop_rule": "default",
+  "tags": ["curios:soul_stone"],
+  "order": 0
+}

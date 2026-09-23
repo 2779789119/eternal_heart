@@ -1,0 +1,11 @@
+{
+  "shi_ting": {
+    "subtitle": "subtitle.eternal_heart.timestop",
+    "sounds": [
+      {
+        "name": "eternal_heart:shi_ting",
+        "stream": true
+      }
+    ]
+  }
+}

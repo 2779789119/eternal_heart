@@ -47,6 +47,12 @@ public interface IFeature {
     /** 暴击事件 */
     default void onCriticalHit(Player player, CriticalHitEvent event) {}
     
+    /**
+     * 伤害最终结算（护甲 / 抗性 / 吸收计算完毕，扣血之前）。
+     * 适合做「致死拦截」「血量审计」这类需要看到最终伤害值的防护逻辑。
+     */
+    default void onFinalDamage(Player player, net.minecraftforge.event.entity.living.LivingDamageEvent event) {}
+
     /** 玩家死亡事件 */
     default void onPlayerDeath(Player player, LivingDeathEvent event) {}
     

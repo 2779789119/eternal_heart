@@ -4,10 +4,10 @@ license="MIT"
 
 [[mods]]
 modId="eternal_heart"
-version="1.3.0"
-displayName="Eternal Heart - 永恒之心"
+version="${mod_version}"
+displayName="eternal_heart-永恒之心"
 logoFile="eternal_heart_logo.png"
-description="还原泰拉瑞亚 Fargo魂石模组「永恒之魂」的终极饰品。需 MineFargo 作为前置。可选集成：FTB Ultimine（连锁挖掘）、Caelus（鞘翅飞行）、AttributeFix（解除血量上限）、Pehkui（体型缩放）。"
+description="还原泰拉瑞亚 Fargo魂石模组「永恒之魂」的终极饰品。需 MineFargo 作为前置。可选集成：FTB Ultimine（连锁挖掘）、Caelus（鞘翅飞行）、AttributeFix（解除血量上限）。"
 authors=["Adapted from Inolia_Zaicek's MineFargo"]
 
 [[dependencies.eternal_heart]]
@@ -33,7 +33,7 @@ authors=["Adapted from Inolia_Zaicek's MineFargo"]
 
 [[dependencies.eternal_heart]]
     modId="mine_fargo"
-    mandatory=true
+    mandatory=${mine_fargo_mandatory}
     versionRange="[1.2,)"
     ordering="AFTER"
     side="BOTH"
@@ -56,12 +56,5 @@ authors=["Adapted from Inolia_Zaicek's MineFargo"]
     modId="attributefix"
     mandatory=false
     versionRange="[21,)"
-    ordering="AFTER"
-    side="BOTH"
-
-[[dependencies.eternal_heart]]
-    modId="pehkui"
-    mandatory=false
-    versionRange="[3.8,)"
     ordering="AFTER"
     side="BOTH"

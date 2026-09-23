@@ -31,6 +31,11 @@ final class CaelusIntegration {
         } catch (Exception ignored) {}
     }
 
+    /** 鞘翅飞行是否真正可用（Caelus 已安装且属性注册成功） */
+    static boolean isAvailable() {
+        return FLIGHT_ATTR != null;
+    }
+
     /** 启用/禁用鞘翅飞行 */
     static void setFlight(Player player, boolean enable) {
         if (FLIGHT_ATTR == null) return;

@@ -1,10 +1,14 @@
 package com.eternal_heart;
 
+import com.eternal_heart.config.ConfigValues;
+import com.eternal_heart.core.Numbers;
+import com.eternal_heart.features.CustomAttributes;
 import com.eternal_heart.features.FeatureManager;
+import com.eternal_heart.integration.Integrations;
 import com.google.common.collect.Multimap;
 import net.minecraft.ChatFormatting;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.Item;
@@ -12,287 +16,207 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import top.theillusivec4.curios.api.SlotContext;
-import com.eternal_heart.integration.Integrations;
 import top.theillusivec4.curios.api.type.capability.ICurioItem;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 public class EternalHeartItem extends Item implements ICurioItem {
+    public EternalHeartItem(Properties properties) { super(properties); }
 
-    public EternalHeartItem(Properties properties) {
-        super(properties);
+    @Override
+    public Multimap<Attribute, AttributeModifier> getAttributeModifiers(SlotContext context, UUID uuid, ItemStack stack) {
+        return FeatureManager.buildAttributeModifiers(context, uuid, stack);
     }
 
     @Override
-    public Multimap<Attribute, AttributeModifier> getAttributeModifiers(
-            SlotContext slotContext, UUID uuid, ItemStack stack) {
-        return FeatureManager.buildAttributeModifiers(slotContext, uuid, stack);
+    public boolean canEquipFromUse(SlotContext context, ItemStack stack) { return true; }
+
+    /**
+     * 无视绑定：永恒之心永远允许装备与取下。
+     *
+     * <p>与 {@code CurioGuard} 配合：这里声明「物品自身不设限」，
+     * CurioGuard 负责清除外在的绑定来源（绑定诅咒附魔等）并提供强制取下兜底。</p>
+     */
+    @Override
+    public boolean canEquip(SlotContext context, ItemStack stack) { return true; }
+
+    @Override
+    public boolean canUnequip(SlotContext context, ItemStack stack) { return true; }
+
+    private static MutableComponent text(String key, Object... args) {
+        return Component.translatable("tooltip.eternal_heart." + key, args);
+    }
+
+    private static String number(double value) {
+        return Numbers.format(value);
+    }
+
+    private static Object setting(String key) { return ConfigValues.get(ConfigValues.entries().get(key)); }
+    private static String value(String key) { return number(((Number) setting(key)).doubleValue()); }
+    private static String percent(String key) { return number(((Number) setting(key)).doubleValue() * 100); }
+    private static boolean on(String key) { return (Boolean) setting(key); }
+    private static boolean positive(String key) { return ((Number) setting(key)).doubleValue() > 0; }
+
+    /** 总倍率类配置：不等于 1.0 才算改动过（用于扩展属性的"有别于默认"显示）。 */
+    private static boolean gained(String key) { return ((Number) setting(key)).doubleValue() != 1.0; }
+
+    /** 自定义属性配置（原始文本列表，可能为空）。 */
+    private static List<String> customAttributes() {
+        List<String> result = new ArrayList<>();
+        if (setting("EXTRA_ATTRIBUTES") instanceof List<?> list) {
+            for (Object element : list) result.add(String.valueOf(element));
+        }
+        return result;
+    }
+
+    private static void flags(List<Component> parts, String... keys) {
+        for (String key : keys) if (on(key))
+            parts.add(Component.translatable("config.eternal_heart.field." + key.toLowerCase(Locale.ROOT)));
+    }
+
+    private static void range(List<Component> parts, String key, String config) {
+        if (positive(config)) parts.add(text(key, value(config)));
+    }
+
+    private static void row(List<Component> tooltip, ChatFormatting color, List<Component> parts) {
+        if (parts.isEmpty()) return;
+        MutableComponent joined = Component.empty();
+        for (Component part : parts) {
+            if (!joined.getSiblings().isEmpty()) joined.append("  |  ");
+            joined.append(part);
+        }
+        tooltip.add(joined.withStyle(color));
+        parts.clear();
     }
 
     @Override
-    public boolean canEquipFromUse(SlotContext slotContext, ItemStack stack) {
-        return true;
-    }
-
-    @Override
-    public void appendHoverText(ItemStack stack, @Nullable Level level,
-                                List<Component> tooltip, TooltipFlag flag) {
-
-        // 风味引言
-        tooltip.add(Component.literal("◆ '无论凡人或不朽，都承认你的神性' ◆")
-                .withStyle(ChatFormatting.GOLD));
+    public void appendHoverText(ItemStack stack, @Nullable Level level, List<Component> tooltip, TooltipFlag flag) {
+        tooltip.add(text("flavor").withStyle(ChatFormatting.GOLD));
         tooltip.add(Component.empty());
-
-        // 暴击/永怒机制
-        tooltip.add(Component.literal("暴击率固定为 50%")
-                .withStyle(ChatFormatting.GOLD));
-        tooltip.add(Component.literal("暴击时 +10%，满 100% 后每击获得 10% 生命窃取")
-                .withStyle(ChatFormatting.GOLD));
-        tooltip.add(Component.literal("并获得 +5% 伤害与 +5% 伤害减免")
-                .withStyle(ChatFormatting.GOLD));
-        tooltip.add(Component.literal("受击时重置（MC 适配：" + EternalHeartConfig.FURY_MAX_STACKS.get() + " 层永怒叠层系统）")
-                .withStyle(ChatFormatting.GOLD));
+        tooltip.add(text("crit1").withStyle(ChatFormatting.GOLD));
+        tooltip.add(text("crit2", value("FURY_MAX_STACKS"), percent("FURY_DAMAGE_PER_STACK"), percent("FURY_LIFESTEAL")).withStyle(ChatFormatting.GOLD));
+        tooltip.add(text("crit3").withStyle(ChatFormatting.GOLD));
+        tooltip.add(text("crit4").withStyle(ChatFormatting.GOLD));
         tooltip.add(Component.empty());
+        tooltip.add(text("more").withStyle(ChatFormatting.DARK_GRAY));
+        tooltip.add(text("attack", value("ATTACK_DAMAGE"), value("ATTACK_SPEED")).withStyle(ChatFormatting.RED));
+        tooltip.add(text("hp", value("MAX_HEALTH"), value("ARMOR"), value("ARMOR_TOUGHNESS")).withStyle(ChatFormatting.RED));
+        tooltip.add(text(Integrations.isAttributeFixLoaded() ? "health_cap_modded" : "health_cap_vanilla").withStyle(ChatFormatting.GRAY));
 
-        // "此外还拥有"
-        tooltip.add(Component.literal("此外还拥有：")
-                .withStyle(ChatFormatting.DARK_GRAY));
+        // 扩展属性（仅在非默认时才显示，避免默认配置下刷屏）
+        List<Component> extended = new ArrayList<>();
+        if (positive("ATTACK_KNOCKBACK")) extended.add(text("hit_knockback", value("ATTACK_KNOCKBACK")));
+        if (positive("ENTITY_REACH")) extended.add(text("reach_entity", value("ENTITY_REACH")));
+        if (positive("BLOCK_REACH")) extended.add(text("reach_block", value("BLOCK_REACH")));
+        if (positive("STEP_HEIGHT")) extended.add(text("step_up", value("STEP_HEIGHT")));
+        if (positive("NAMETAG_DISTANCE")) extended.add(text("nametag", value("NAMETAG_DISTANCE")));
+        if (gained("SWIM_SPEED")) extended.add(text("swim", value("SWIM_SPEED")));
+        if (gained("FLYING_SPEED")) extended.add(text("fly", value("FLYING_SPEED")));
+        row(tooltip, ChatFormatting.BLUE, extended);
 
-        // --- 属性 ---
-        double atkDmgPct = (EternalHeartConfig.ATTACK_DAMAGE.get() - 1.0) * 100;
-        double atkSpdPct = (EternalHeartConfig.ATTACK_SPEED.get() - 1.0) * 100;
-        tooltip.add(Component.literal(String.format("+%.0f%% 全部伤害  |  +%.0f%% 攻击速度", atkDmgPct, atkSpdPct))
-                .withStyle(ChatFormatting.RED));
-
-        double effHealth = Math.min(EternalHeartConfig.MAX_HEALTH.get(), Integrations.getEffectiveMaxHealthCap() - 20.0);
-        String healthCapText = Integrations.isAttributeFixLoaded() ? " (AttributeFix: 无上限)" : " (MC 上限 1024)";
-        tooltip.add(Component.literal(String.format("+%.0f 最大生命值" + healthCapText + "  +%.0f 护甲  +%.0f 护甲韧性",
-                        effHealth,
-                        EternalHeartConfig.ARMOR.get(),
-                        EternalHeartConfig.ARMOR_TOUGHNESS.get()))
-                .withStyle(ChatFormatting.RED));
-
-        // --- 防御 ---
-        StringBuilder defense = new StringBuilder();
-        double kb = EternalHeartConfig.KNOCKBACK_RESIST.get();
-        if (kb >= 1.0) defense.append("免疫击退  |  ");
-        int dmgRedPct = (int)(EternalHeartConfig.DAMAGE_REDUCTION.get() * 100);
-        defense.append(dmgRedPct).append("% 伤害减免");
-
-        double cap = EternalHeartConfig.DAMAGE_CAP_RATIO.get();
-        if (cap > 0) defense.append("  |  单次受伤≤").append((int)(cap * 100)).append("%最大生命");
-
-        tooltip.add(Component.literal(defense.toString()).withStyle(ChatFormatting.GRAY));
-
-        // --- 速度 ---
-        double spdPct = EternalHeartConfig.MOVEMENT_SPEED.get() * 100;
-        tooltip.add(Component.literal(String.format("+%.0f%% 移动速度  +%.0f 幸运", spdPct, EternalHeartConfig.LUCK.get()))
-                .withStyle(ChatFormatting.AQUA));
-
-        // --- 回复 ---
-        double hpPerSec = EternalHeartConfig.TICK_REGEN.get() * 20;
-        tooltip.add(Component.literal(String.format("被动生命回复（%.0f HP/s）", hpPerSec))
-                .withStyle(ChatFormatting.GREEN));
-
-        // --- 负面清除 ---
-        int clearSec = EternalHeartConfig.DEBUFF_CLEAR_INTERVAL.get() / 20;
-        tooltip.add(Component.literal(String.format("每 %d 秒清除负面效果", clearSec))
-                .withStyle(ChatFormatting.YELLOW));
-
-        // --- 免疫 ---
-        StringBuilder immunity = new StringBuilder();
-        if (EternalHeartConfig.FIRE_IMMUNE.get()) immunity.append("火焰");
-        double fallPct = EternalHeartConfig.FALL_DAMAGE_RATIO.get();
-        if (fallPct <= 0) immunity.append(immunity.isEmpty() ? "摔落" : " / 摔落");
-        else immunity.append(immunity.isEmpty() ? "" : " / ").append((int)((1 - fallPct) * 100)).append("%摔落减免");
-        if (EternalHeartConfig.DROWN_IMMUNE.get())
-            immunity.append(immunity.isEmpty() ? "溺水" : " / 溺水");
-        if (EternalHeartConfig.SUFFOCATE_IMMUNE.get())
-            immunity.append(immunity.isEmpty() ? "窒息" : " / 窒息");
-        double reflectPct = EternalHeartConfig.REFLECT_RATIO.get() * 100;
-        immunity.append("  |  反伤 ").append((int)reflectPct).append("%");
-        double expResist = EternalHeartConfig.EXPLOSION_RESIST.get();
-        if (expResist > 0) immunity.append("  |  ").append((int)(expResist * 100)).append("%爆炸减免");
-        tooltip.add(Component.literal(immunity.toString()).withStyle(ChatFormatting.LIGHT_PURPLE));
-
-        tooltip.add(Component.empty());
-
-        // --- 被动效果 ---
-        StringBuilder passive = new StringBuilder();
-        if (EternalHeartConfig.NIGHT_VISION.get()) passive.append("夜视");
-        if (EternalHeartConfig.WATER_BREATHING.get())
-            passive.append(passive.isEmpty() ? "水下呼吸" : " / 水下呼吸");
-        if (EternalHeartConfig.HASTE_LEVEL.get() > 0)
-            passive.append(passive.isEmpty() ? "" : " / ").append("急迫 ").append(EternalHeartConfig.HASTE_LEVEL.get());
-        if (EternalHeartConfig.FIRE_RESISTANCE_POTION.get())
-            passive.append(passive.isEmpty() ? "抗火" : " / 抗火");
-        if (EternalHeartConfig.SATURATION.get())
-            passive.append(passive.isEmpty() ? "饱和" : " / 饱和");
-        tooltip.add(Component.literal(passive.toString()).withStyle(ChatFormatting.AQUA));
-
-        // --- 战斗 ---
-        StringBuilder combat = new StringBuilder();
-        int dodgePct = (int)(EternalHeartConfig.DODGE_CHANCE.get() * 100);
-        int refProjPct = (int)(EternalHeartConfig.REFLECT_PROJECTILE_CHANCE.get() * 100);
-        combat.append("闪避 ").append(dodgePct).append("%  |  弹射反射 ").append(refProjPct).append("%");
-        double auraRange = EternalHeartConfig.DAMAGE_AURA_RANGE.get();
-        if (auraRange > 0) combat.append("  |  伤害光环(").append((int)auraRange).append("格)");
-        double lowHp = EternalHeartConfig.LOW_HP_THRESHOLD.get();
-        double lowHpMult = EternalHeartConfig.LOW_HP_DAMAGE_MULT.get();
-        if (lowHp > 0) combat.append("  |  低血(").append((int)(lowHp * 100)).append("%)狂怒×").append((int)(lowHpMult * 100)).append("%");
-        double bossBonus = EternalHeartConfig.BOSS_DAMAGE_BONUS.get();
-        if (bossBonus > 0) combat.append("  |  Boss增伤+").append((int)(bossBonus * 100)).append("%");
-        double exec = EternalHeartConfig.EXECUTE_THRESHOLD.get();
-        if (exec > 0) combat.append("  |  斩杀 ").append((int)(exec * 100)).append("%");
-        double ignite = EternalHeartConfig.IGNITE_CHANCE.get();
-        if (ignite > 0) combat.append("  |  点燃 ").append((int)(ignite * 100)).append("%");
-        tooltip.add(Component.literal(combat.toString()).withStyle(ChatFormatting.RED));
-
-        // --- 护盾 ---
-        StringBuilder shield = new StringBuilder();
-        double sps = EternalHeartConfig.SHIELD_PER_SEC.get();
-        double smax = EternalHeartConfig.SHIELD_MAX.get();
-        if (sps > 0) shield.append("满血护盾自动充能(").append((int)smax).append("上限)");
-        int burstDur = EternalHeartConfig.SPEED_BURST_DURATION.get();
-        if (burstDur > 0)
-            shield.append(shield.isEmpty() ? "" : "  |  ").append("受伤速度爆发(").append(burstDur / 20).append("秒)");
-        tooltip.add(Component.literal(shield.toString()).withStyle(ChatFormatting.YELLOW));
-
-        // --- 采集 ---
-        StringBuilder harvest = new StringBuilder();
-        if (EternalHeartConfig.AUTO_SMELT.get()) harvest.append("自动冶炼");
-        if (EternalHeartConfig.VEIN_MINER.get())
-            harvest.append(harvest.isEmpty() ? "连锁挖掘" : "  |  连锁挖掘(" + EternalHeartConfig.VEIN_MAX_BLOCKS.get() + "块)");
-        int fortune = EternalHeartConfig.FORTUNE_BONUS.get();
-        int looting = EternalHeartConfig.LOOTING_BONUS.get();
-        if (fortune > 0) harvest.append(harvest.isEmpty() ? "" : "  |  ").append("时运+").append(fortune);
-        if (looting > 0) harvest.append(harvest.isEmpty() ? "" : "  |  ").append("抢夺+").append(looting);
-        tooltip.add(Component.literal(harvest.toString()).withStyle(ChatFormatting.YELLOW));
-
-        // --- 生存 ---
-        StringBuilder survive = new StringBuilder();
-        if (EternalHeartConfig.UNDYING_TOTEM.get())
-            survive.append("不死图腾(").append(EternalHeartConfig.UNDYING_COOLDOWN.get()).append("秒冷却)");
-        if (EternalHeartConfig.VOID_RESCUE.get())
-            survive.append(survive.isEmpty() ? "虚空救援" : " | 虚空救援");
-        if (EternalHeartConfig.SOUL_BIND.get())
-            survive.append(survive.isEmpty() ? "灵魂绑定" : " | 灵魂绑定");
-        if (EternalHeartConfig.KILL_EXPLOSION.get())
-            survive.append(survive.isEmpty() ? "击杀爆炸" : " | 击杀爆炸");
-        double killHeal = EternalHeartConfig.KILL_HEAL_RATIO.get();
-        if (killHeal > 0)
-            survive.append(survive.isEmpty() ? "" : " | ").append("击杀恢复").append((int)(killHeal * 100)).append("%血量");
-        if (EternalHeartConfig.INFINITE_ARROWS.get())
-            survive.append(survive.isEmpty() ? "无限箭矢" : " | 无限箭矢");
-        if (EternalHeartConfig.ENDER_CHEST_REMOTE.get())
-            survive.append(survive.isEmpty() ? "便携末影箱" : " | 便携末影箱");
-        tooltip.add(Component.literal(survive.toString()).withStyle(ChatFormatting.GREEN));
-
-        // --- 适应 ---
-        StringBuilder adapt = new StringBuilder();
-        double magRange = EternalHeartConfig.MAGNET_RANGE.get();
-        if (magRange > 0) adapt.append("物品磁铁(").append((int)magRange).append("格)");
-        double glowRange = EternalHeartConfig.GLOW_RANGE.get();
-        if (glowRange > 0) adapt.append(adapt.isEmpty() ? "" : "  |  ").append("生物侦测(").append((int)glowRange).append("格)");
-        if (EternalHeartConfig.LAVA_WALKING.get())
-            adapt.append(adapt.isEmpty() ? "熔岩行走" : "  |  熔岩行走");
-        if (EternalHeartConfig.WATER_WALKING.get())
-            adapt.append(adapt.isEmpty() ? "水上行走" : "  |  水上行走");
-        if (EternalHeartConfig.WALL_CLIMB.get())
-            adapt.append(adapt.isEmpty() ? "爬墙" : "  |  爬墙");
-        tooltip.add(Component.literal(adapt.toString()).withStyle(ChatFormatting.LIGHT_PURPLE));
-
-        // --- 机动 ---
-        StringBuilder mobility = new StringBuilder();
-        if (EternalHeartConfig.CREATIVE_FLIGHT.get()) mobility.append("创造飞行");
-        if (EternalHeartConfig.JUMP_BOOST.get())
-            mobility.append(mobility.isEmpty() ? "跳跃强化" : "  |  跳跃强化");
-        if (EternalHeartConfig.STEP_ASSIST.get())
-            mobility.append(mobility.isEmpty() ? "自动上坡" : "  |  自动上坡");
-        if (EternalHeartConfig.SLOW_FALL_GLIDE.get())
-            mobility.append(mobility.isEmpty() ? "缓降滑翔" : "  |  缓降滑翔");
-        if (EternalHeartConfig.DOLPHINS_GRACE.get())
-            mobility.append(mobility.isEmpty() ? "海豚的恩惠" : "  |  海豚的恩惠");
-        tooltip.add(Component.literal(mobility.toString()).withStyle(ChatFormatting.AQUA));
-
-        // --- 光环 ---
-        StringBuilder aura = new StringBuilder();
-        double witherR = EternalHeartConfig.WITHER_AURA_RANGE.get();
-        if (witherR > 0) aura.append("凋零光环(").append((int)witherR).append("格)");
-        double peaceR = EternalHeartConfig.PEACE_AURA_RANGE.get();
-        if (peaceR > 0) aura.append(aura.isEmpty() ? "" : "  |  ").append("和平光环(").append((int)peaceR).append("格)");
-        double growthR = EternalHeartConfig.GROWTH_AURA_RANGE.get();
-        if (growthR > 0) aura.append(aura.isEmpty() ? "" : "  |  ").append("生长光环(").append((int)growthR).append("格)");
-        if (!aura.isEmpty())
-            tooltip.add(Component.literal(aura.toString()).withStyle(ChatFormatting.DARK_PURPLE));
-
-        // --- 战斗生存增强 ---
-        StringBuilder combatPlus = new StringBuilder();
-        if (EternalHeartConfig.KNOCKBACK_IMMUNITY.get())
-            combatPlus.append("击退免疫");
-        if (EternalHeartConfig.AUTO_POTION.get()) {
-            int potPct = (int)(EternalHeartConfig.AUTO_POTION_THRESHOLD.get() * 100);
-            combatPlus.append(combatPlus.isEmpty() ? "" : "  |  ").append("低血(").append(potPct).append("%)自动喝药");
+        // 自定义属性（任意模组属性）：最多列 3 条，其余折叠显示
+        List<String> custom = customAttributes();
+        if (!custom.isEmpty()) {
+            List<Component> lines = new ArrayList<>();
+            int shown = Math.min(custom.size(), 3);
+            for (int i = 0; i < shown; i++) {
+                CustomAttributes.Spec spec = CustomAttributes.parseLine(custom.get(i));
+                if (spec == null) continue;
+                lines.add(text("custom_attr",
+                        Component.translatable(CustomAttributes.displayNameKey(spec.attribute())),
+                        number(spec.value()), CustomAttributes.operationName(spec.operation())));
+            }
+            if (custom.size() > shown) lines.add(text("custom_attr_more", custom.size() - shown));
+            row(tooltip, ChatFormatting.BLUE, lines);
         }
-        if (EternalHeartConfig.LIGHTNING_REFLECT.get()) {
-            int lrPct = (int)(EternalHeartConfig.LIGHTNING_REFLECT_CHANCE.get() * 100);
-            combatPlus.append(combatPlus.isEmpty() ? "" : "  |  ").append("受伤闪电反击(").append(lrPct).append("%)");
+
+        List<Component> parts = new ArrayList<>();
+        if (((Number) setting("KNOCKBACK_RESIST")).doubleValue() >= 1 || on("KNOCKBACK_IMMUNITY")) parts.add(text("knockback"));
+        parts.add(text("reduction", percent("DAMAGE_REDUCTION")));
+        if (positive("DAMAGE_CAP_RATIO")) parts.add(text("cap", percent("DAMAGE_CAP_RATIO")));
+        row(tooltip, ChatFormatting.GRAY, parts);
+        tooltip.add(text("speed", percent("MOVEMENT_SPEED"), value("LUCK")).withStyle(ChatFormatting.AQUA));
+        tooltip.add(text("regen", number(((Number) setting("TICK_REGEN")).doubleValue() * 20)).withStyle(ChatFormatting.GREEN));
+        if (positive("DEBUFF_CLEAR_INTERVAL"))
+            tooltip.add(text("debuff", number(((Number) setting("DEBUFF_CLEAR_INTERVAL")).doubleValue() / 20)).withStyle(ChatFormatting.YELLOW));
+        flags(parts, "FIRE_IMMUNE", "DROWN_IMMUNE", "SUFFOCATE_IMMUNE", "CACTUS_IMMUNE");
+        parts.add(text("fall", percent("FALL_DAMAGE_RATIO")));
+        parts.add(text("reflect", number((((Number) setting("REFLECT_RATIO")).doubleValue() + ((Number) setting("COUNTER_DAMAGE_RATIO")).doubleValue()) * 100)));
+        parts.add(text("explosion", percent("EXPLOSION_RESIST")));
+        row(tooltip, ChatFormatting.LIGHT_PURPLE, parts);
+        flags(parts, "NIGHT_VISION", "WATER_BREATHING", "FIRE_RESISTANCE_POTION", "SATURATION", "PERMANENT_LUCK");
+        if (positive("HASTE_LEVEL")) parts.add(text("haste", value("HASTE_LEVEL")));
+        row(tooltip, ChatFormatting.AQUA, parts);
+        parts.add(text("dodge", percent("DODGE_CHANCE")));
+        parts.add(text("projectiles", percent("REFLECT_PROJECTILE_CHANCE")));
+        if (positive("LOW_HP_THRESHOLD")) parts.add(text("berserk", percent("LOW_HP_THRESHOLD"), value("LOW_HP_DAMAGE_MULT")));
+        if (positive("BOSS_DAMAGE_BONUS")) parts.add(text("boss", percent("BOSS_DAMAGE_BONUS")));
+        if (positive("EXECUTE_THRESHOLD")) parts.add(text("execute", percent("EXECUTE_THRESHOLD")));
+        if (positive("IGNITE_CHANCE")) parts.add(text("ignite", percent("IGNITE_CHANCE"), value("IGNITE_DURATION")));
+        if (on("PIERCE_DAMAGE_CAP")) parts.add(text("pierce"));
+        row(tooltip, ChatFormatting.RED, parts);
+        if (positive("SHIELD_PER_SEC")) parts.add(text("shield", value("SHIELD_PER_SEC"), value("SHIELD_MAX")));
+        if (positive("SPEED_BURST_DURATION")) parts.add(text("burst", number(((Number) setting("SPEED_BURST_DURATION")).doubleValue() / 20)));
+        if (gained("COOLDOWN_RATIO")) parts.add(text("cooldown", percent("COOLDOWN_RATIO")));
+        if (on("TIME_STOP")) parts.add(text("timestop", value("TIME_STOP_DURATION")));
+        row(tooltip, ChatFormatting.YELLOW, parts);
+        flags(parts, "AUTO_SMELT");
+        if (on("VEIN_MINER")) parts.add(text("vein", value("VEIN_MAX_BLOCKS")));
+        if (positive("FORTUNE_BONUS")) parts.add(text("fortune", value("FORTUNE_BONUS")));
+        if (positive("LOOTING_BONUS")) parts.add(text("looting", value("LOOTING_BONUS")));
+        row(tooltip, ChatFormatting.YELLOW, parts);
+        if (on("UNDYING_TOTEM")) parts.add(text("undying", value("UNDYING_COOLDOWN")));
+        flags(parts, "VOID_RESCUE", "KILL_EXPLOSION", "INFINITE_ARROWS", "ENDER_CHEST_REMOTE");
+        if (on("SOUL_BIND")) parts.add(text("soul"));
+        if (positive("KILL_HEAL_RATIO")) parts.add(text("kill_heal", percent("KILL_HEAL_RATIO")));
+        row(tooltip, ChatFormatting.GREEN, parts);
+        if (on("HEALTH_GUARD")) parts.add(text("guard_health"));
+        if (on("MAX_HEALTH_GUARD")) parts.add(text("guard_max_health"));
+        if (on("LETHAL_GUARD")) parts.add(text("guard_lethal", percent("LETHAL_GUARD_RATIO")));
+        if (on("KEEP_INVENTORY") || on("KEEP_EXPERIENCE")) parts.add(text("guard_keep"));
+        if (on("ITEM_GUARD")) parts.add(text("guard_item"));
+        if (on("CURIO_KEEP_ON_DEATH")) parts.add(text("curio_keep"));
+        if (on("CURIO_UNBIND")) parts.add(text("curio_unbind"));
+        if (on("CURIO_SEIZE_GUARD")) parts.add(text("curio_seize"));
+        row(tooltip, ChatFormatting.GOLD, parts);
+        range(parts, "magnet", "MAGNET_RANGE");
+        range(parts, "glow", "GLOW_RANGE");
+        flags(parts, "LAVA_WALKING");
+        if (on("WATER_WALKING")) parts.add(text("water"));
+        row(tooltip, ChatFormatting.LIGHT_PURPLE, parts);
+        String mode = setting("FLIGHT_MODE").toString();
+        if (!mode.equals("OFF")) parts.add(Component.translatable("config.eternal_heart.flight." + mode.toLowerCase(Locale.ROOT)));
+        flags(parts, "JUMP_BOOST", "STEP_ASSIST", "SLOW_FALL_GLIDE", "DOLPHINS_GRACE");
+        row(tooltip, ChatFormatting.AQUA, parts);
+        if (on("DAMAGE_AURA_ENABLED")) range(parts, "damage_aura", "DAMAGE_AURA_RANGE");
+        if (on("WITHER_AURA_ENABLED")) range(parts, "wither", "WITHER_AURA_RANGE");
+        if (on("PEACE_AURA_ENABLED")) range(parts, "peace", "PEACE_AURA_RANGE");
+        if (on("GROWTH_AURA_ENABLED")) range(parts, "growth", "GROWTH_AURA_RANGE");
+        row(tooltip, ChatFormatting.DARK_PURPLE, parts);
+        if (on("AUTO_POTION")) parts.add(text("potion", percent("AUTO_POTION_THRESHOLD")));
+        if (on("LIGHTNING_REFLECT")) parts.add(text("lightning", percent("LIGHTNING_REFLECT_CHANCE")));
+        if (on("KILL_CHAIN")) parts.add(text("chain", value("KILL_CHAIN_RANGE")));
+        row(tooltip, ChatFormatting.DARK_RED, parts);
+        if (on("AUTO_TORCH")) parts.add(text("torch", value("AUTO_TORCH_LIGHT_LEVEL")));
+        flags(parts, "AUTO_DOOR");
+        if (on("ORE_HIGHLIGHT")) parts.add(text("cave", value("ORE_HIGHLIGHT_RANGE")));
+        if (on("AUTO_FISH")) parts.add(text("fish"));
+        if (on("AUTO_REFILL")) parts.add(text("refill"));
+        if (on("INFINITE_BUCKET")) {
+            parts.add(text("water_bucket"));
+            if (on("INFINITE_BUCKET_LAVA")) parts.add(text("lava_bucket"));
         }
-        if (EternalHeartConfig.KILL_CHAIN.get()) {
-            int kcRange = EternalHeartConfig.KILL_CHAIN_RANGE.get().intValue();
-            combatPlus.append(combatPlus.isEmpty() ? "" : "  |  ").append("击杀连锁(").append(kcRange).append("格)");
-        }
-        if (EternalHeartConfig.PERMANENT_LUCK.get())
-            combatPlus.append(combatPlus.isEmpty() ? "永久幸运" : "  |  永久幸运");
-        if (!combatPlus.isEmpty())
-            tooltip.add(Component.literal(combatPlus.toString()).withStyle(ChatFormatting.DARK_RED));
-
-        // --- 探索便利 ---
-        StringBuilder explore = new StringBuilder();
-        if (EternalHeartConfig.AUTO_TORCH.get())
-            explore.append("自动火把(光照<").append(EternalHeartConfig.AUTO_TORCH_LIGHT_LEVEL.get()).append(")");
-        if (EternalHeartConfig.AUTO_DOOR.get())
-            explore.append(explore.isEmpty() ? "自动开关门" : "  |  自动开关门");
-        if (EternalHeartConfig.ORE_HIGHLIGHT.get())
-            explore.append(explore.isEmpty() ? "洞穴高亮" : "  |  洞穴高亮(").append(EternalHeartConfig.ORE_HIGHLIGHT_RANGE.get().intValue()).append("格)");
-        if (EternalHeartConfig.AUTO_FISH.get())
-            explore.append(explore.isEmpty() ? "自动钓鱼" : "  |  自动钓鱼");
-        double chestR = EternalHeartConfig.AUTO_OPEN_CHEST_RANGE.get();
-        if (chestR > 0)
-            explore.append(explore.isEmpty() ? "" : "  |  ").append("宝箱磁铁(").append((int)chestR).append("格)");
-        if (!explore.isEmpty())
-            tooltip.add(Component.literal(explore.toString()).withStyle(ChatFormatting.AQUA));
-
-        // --- 机动便利 ---
-        StringBuilder conv = new StringBuilder();
-        if (EternalHeartConfig.DASH.get())
-            conv.append("冲刺(双击W,×").append(String.format("%.1f", EternalHeartConfig.DASH_FORCE.get())).append(")");
-        if (EternalHeartConfig.AUTO_REFILL.get())
-            conv.append(conv.isEmpty() ? "自动补货" : "  |  自动补货");
-        if (EternalHeartConfig.INFINITE_BUCKET.get())
-            conv.append(conv.isEmpty() ? "无限水/岩浆桶" : "  |  无限水/岩浆桶");
-        if (!conv.isEmpty())
-            tooltip.add(Component.literal(conv.toString()).withStyle(ChatFormatting.YELLOW));
-
-        // --- 结尾 ---
+        row(tooltip, ChatFormatting.AQUA, parts);
         tooltip.add(Component.empty());
-        tooltip.add(Component.literal("—— 泰拉瑞亚 Fargo's Soul of Eternity 完整还原 ——")
-                .withStyle(ChatFormatting.GOLD).withStyle(ChatFormatting.ITALIC));
-        double xpMult = EternalHeartConfig.XP_MULTIPLIER.get();
-        tooltip.add(Component.literal(String.format("经验获取 ×%.1f", xpMult))
-                .withStyle(ChatFormatting.GREEN));
-
+        tooltip.add(text("extras").withStyle(ChatFormatting.GOLD, ChatFormatting.ITALIC));
+        tooltip.add(text("xp", value("XP_MULTIPLIER")).withStyle(ChatFormatting.GREEN));
         super.appendHoverText(stack, level, tooltip, flag);
     }
 
     @Override
-    public boolean isFoil(ItemStack stack) {
-        return true;
-    }
-
-    protected String getTooltipItemName() {
-        return BuiltInRegistries.ITEM.getKey(this).getPath();
-    }
+    public boolean isFoil(ItemStack stack) { return true; }
 }

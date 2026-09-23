@@ -11,13 +11,11 @@ public final class Integrations {
     private static final boolean FTB_ULTIMINE_LOADED;
     private static final boolean CAELUS_LOADED;
     private static final boolean ATTRIBUTE_FIX_LOADED;
-    private static final boolean PEHKUI_LOADED;
 
     static {
         FTB_ULTIMINE_LOADED = ModList.get().isLoaded("ftbultimine");
         CAELUS_LOADED = ModList.get().isLoaded("caelus");
         ATTRIBUTE_FIX_LOADED = ModList.get().isLoaded("attributefix");
-        PEHKUI_LOADED = ModList.get().isLoaded("pehkui");
     }
 
     // ==================== 查询 ====================
@@ -25,25 +23,45 @@ public final class Integrations {
     public static boolean isFtbUltimineLoaded() { return FTB_ULTIMINE_LOADED; }
     public static boolean isCaelusLoaded()       { return CAELUS_LOADED; }
     public static boolean isAttributeFixLoaded() { return ATTRIBUTE_FIX_LOADED; }
-    public static boolean isPehkuiLoaded()       { return PEHKUI_LOADED; }
 
     // ==================== FTB Ultimine ====================
 
     /** 以"无形状"模式激活 FTB Ultimine（自动查找同类方块连锁挖掘）。 */
-    public static void activateUltimine(Object player) {
-        if (FTB_ULTIMINE_LOADED) FTBUltimineIntegration.activate((net.minecraft.world.entity.player.Player) player);
+    public static boolean activateUltimine(Object player) {
+        if (!FTB_ULTIMINE_LOADED) return false;
+        try {
+            return FTBUltimineIntegration.activate((net.minecraft.world.entity.player.Player) player);
+        } catch (LinkageError ignored) {
+            return false;
+        }
     }
 
     /** 关闭 FTB Ultimine。 */
     public static void deactivateUltimine(Object player) {
-        if (FTB_ULTIMINE_LOADED) FTBUltimineIntegration.deactivate((net.minecraft.world.entity.player.Player) player);
+        if (!FTB_ULTIMINE_LOADED) return;
+        try {
+            FTBUltimineIntegration.deactivate((net.minecraft.world.entity.player.Player) player);
+        } catch (NoClassDefFoundError ignored) {}
     }
 
     // ==================== Caelus - 鞘翅飞行 ====================
 
     /** 为玩家启用鞘翅飞行（无需装备鞘翅）。 */
     public static void setElytraFlight(Object player, boolean enable) {
-        if (CAELUS_LOADED) CaelusIntegration.setFlight((net.minecraft.world.entity.player.Player) player, enable);
+        if (!CAELUS_LOADED) return;
+        try {
+            CaelusIntegration.setFlight((net.minecraft.world.entity.player.Player) player, enable);
+        } catch (NoClassDefFoundError ignored) {}
+    }
+
+    /** 鞘翅飞行是否真正可用（Caelus 已安装且飞行属性注册成功）——供飞行模式回退判断。 */
+    public static boolean isElytraFlightAvailable() {
+        if (!CAELUS_LOADED) return false;
+        try {
+            return CaelusIntegration.isAvailable();
+        } catch (NoClassDefFoundError e) {
+            return false;
+        }
     }
 
     // ==================== AttributeFix ====================
@@ -52,17 +70,5 @@ public final class Integrations {
     public static double getEffectiveMaxHealthCap() {
         if (ATTRIBUTE_FIX_LOADED) return Double.MAX_VALUE;
         return 1024.0;
-    }
-
-    // ==================== Pehkui ====================
-
-    /** 设置玩家体型缩放（1.0 = 正常）。 */
-    public static void setScale(Object player, float scale) {
-        if (PEHKUI_LOADED) PehkuiIntegration.setScale((net.minecraft.world.entity.player.Player) player, scale);
-    }
-
-    /** 重置玩家体型到默认。 */
-    public static void resetScale(Object player) {
-        if (PEHKUI_LOADED) PehkuiIntegration.resetScale((net.minecraft.world.entity.player.Player) player);
     }
 }
