@@ -212,6 +212,10 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> REVELATIONFIX_EXTRA_ITEMS;
     public static final ForgeConfigSpec.BooleanValue REVELATIONFIX_AUTO_DETECT;
 
+    // ==================== 渲染 ====================
+    /** 碎片渲染总开关（默认开）。关闭后完全退回模组原版：不画碎片、提示框照常显示。 */
+    public static final ForgeConfigSpec.BooleanValue SHARD_VEIL;
+
     public static final ForgeConfigSpec SPEC;
 
     /** 配置加载后保存的 ModConfig 引用，供配置面板持久化（保存回 toml）使用 */
@@ -230,8 +234,8 @@ public class EternalHeartConfig {
         MAX_HEALTH = BUILDER.comment("最大生命值增加量 (加法，原版上限 1024，安装 AttributeFix 后无上限)").defineInRange("maxHealth", 1004.0, -Double.MAX_VALUE, Double.MAX_VALUE);
         ARMOR = BUILDER.comment("护甲值增加量").defineInRange("armor", 12.0, -Double.MAX_VALUE, Double.MAX_VALUE);
         ARMOR_TOUGHNESS = BUILDER.comment("护甲韧性增加量").defineInRange("armorToughness", 8.0, -Double.MAX_VALUE, Double.MAX_VALUE);
-        KNOCKBACK_RESIST = BUILDER.comment("击退抗性 (1.0 = 免疫击退，可超过 1.0)").defineInRange("knockbackResist", 1.0, -Double.MAX_VALUE, Double.MAX_VALUE);
-        MOVEMENT_SPEED = BUILDER.comment("移动速度最终增量比例 (0.5 = +50%，即总倍率 1.5)").defineInRange("movementSpeed", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
+        KNOCKBACK_RESIST = BUILDER.comment("击退抗性 (100 = 免疫击退，可超过 100)").defineInRange("knockbackResist", 1.0, -Double.MAX_VALUE, Double.MAX_VALUE);
+        MOVEMENT_SPEED = BUILDER.comment("移动速度最终增量比例 (50 = +50%，即总倍率 1.5)").defineInRange("movementSpeed", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
         LUCK = BUILDER.comment("幸运值增加量").defineInRange("luck", 5.0, -Double.MAX_VALUE, Double.MAX_VALUE);
         BUILDER.pop();
 
@@ -255,9 +259,9 @@ public class EternalHeartConfig {
         BUILDER.pop();
 
         BUILDER.push("防御系统 (Defense)");
-        DAMAGE_REDUCTION = BUILDER.comment("伤害减免比例 (0.5 = 50%，可超过 1.0；伤害不会因此变成治疗)").defineInRange("damageReduction", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
+        DAMAGE_REDUCTION = BUILDER.comment("伤害减免比例 (50 = 50%，可超过 100；伤害不会因此变成治疗)").defineInRange("damageReduction", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
         FALL_DAMAGE_RATIO = BUILDER.comment("摔落伤害保留比例 (0 = 完全免疫)").defineInRange("fallDamageRatio", 0.0, -Double.MAX_VALUE, Double.MAX_VALUE);
-        REFLECT_RATIO = BUILDER.comment("近战反伤比例 (0.2 = 20%)").defineInRange("reflectRatio", 0.2, -Double.MAX_VALUE, Double.MAX_VALUE);
+        REFLECT_RATIO = BUILDER.comment("近战反伤比例 (20 = 20%)").defineInRange("reflectRatio", 0.2, -Double.MAX_VALUE, Double.MAX_VALUE);
         FIRE_IMMUNE = BUILDER.comment("是否免疫火焰伤害").define("fireImmune", true);
         DROWN_IMMUNE = BUILDER.comment("是否免疫溺水伤害").define("drownImmune", true);
         DEBUFF_GUARD = BUILDER.comment("负面效果拦截 - 阻止负面药水效果施加，并按间隔清除已有负面效果（黑/白名单在此生效）").define("debuffGuard", true);
@@ -266,10 +270,10 @@ public class EternalHeartConfig {
         DEBUFF_WHITELIST = BUILDER.comment("效果保护白名单 - 永远不被清除","格式: [\"modid:effect_id\"]").defineList("debuffWhitelist", () -> List.of(), o -> o instanceof String s && s.contains(":"));
         SUFFOCATE_IMMUNE = BUILDER.comment("是否免疫窒息伤害").define("suffocateImmune", true);
         CACTUS_IMMUNE = BUILDER.comment("是否免疫仙人掌伤害").define("cactusImmune", true);
-        EXPLOSION_RESIST = BUILDER.comment("额外爆炸伤害减免 (0.8 = 80%，叠加到基础减伤)").defineInRange("explosionResist", 0.8, -Double.MAX_VALUE, Double.MAX_VALUE);
-        DAMAGE_CAP_RATIO = BUILDER.comment("单次受伤上限 (0.3 = 不超过最大生命30%，0 = 关闭)").defineInRange("damageCapRatio", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
-        PROJECTILE_RESIST = BUILDER.comment("弹射物伤害额外减免 (0.5 = 50%，叠加到基础减伤)").defineInRange("projectileResist", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
-        MAGIC_RESIST = BUILDER.comment("魔法伤害额外减免 (0.3 = 30%，叠加到基础减伤)").defineInRange("magicResist", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
+        EXPLOSION_RESIST = BUILDER.comment("额外爆炸伤害减免 (80 = 80%，叠加到基础减伤)").defineInRange("explosionResist", 0.8, -Double.MAX_VALUE, Double.MAX_VALUE);
+        DAMAGE_CAP_RATIO = BUILDER.comment("单次受伤上限 (30 = 不超过最大生命30%，0 = 关闭)").defineInRange("damageCapRatio", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
+        PROJECTILE_RESIST = BUILDER.comment("弹射物伤害额外减免 (50 = 50%，叠加到基础减伤)").defineInRange("projectileResist", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
+        MAGIC_RESIST = BUILDER.comment("魔法伤害额外减免 (30 = 30%，叠加到基础减伤)").defineInRange("magicResist", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
         BUILDER.pop();
 
         BUILDER.push("生命回复 (Regeneration)");
@@ -295,19 +299,19 @@ public class EternalHeartConfig {
         BUILDER.pop();
 
         BUILDER.push("战斗系统 (Combat)");
-        DODGE_CHANCE = BUILDER.comment("闪避概率 (0.2 = 20%，0 = 关闭；≥1 为必定闪避)").defineInRange("dodgeChance", 0.2, -Double.MAX_VALUE, Double.MAX_VALUE);
-        REFLECT_PROJECTILE_CHANCE = BUILDER.comment("弹射物反射概率 (0.3 = 30%)").defineInRange("reflectProjectileChance", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
-        LOW_HP_THRESHOLD = BUILDER.comment("低血量狂暴阈值 (0.3 = 30%)").defineInRange("lowHpThreshold", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
+        DODGE_CHANCE = BUILDER.comment("闪避概率 (20 = 20%，0 = 关闭；≥100 为必定闪避)").defineInRange("dodgeChance", 0.2, -Double.MAX_VALUE, Double.MAX_VALUE);
+        REFLECT_PROJECTILE_CHANCE = BUILDER.comment("弹射物反射概率 (30 = 30%)").defineInRange("reflectProjectileChance", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
+        LOW_HP_THRESHOLD = BUILDER.comment("低血量狂暴阈值 (30 = 30%)").defineInRange("lowHpThreshold", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
         LOW_HP_DAMAGE_MULT = BUILDER.comment("低血量时伤害倍率 (2.0 = +100%)").defineInRange("lowHpDamageMult", 2.0, -Double.MAX_VALUE, Double.MAX_VALUE);
         BOSS_DAMAGE_BONUS = BUILDER.comment("对 Boss 生物额外伤害倍率").defineInRange("bossDamageBonus", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
-        EXECUTE_THRESHOLD = BUILDER.comment("斩杀阈值 - 敌人血量低于此比例直接秒杀 (0.1 = 10%，0 = 关闭)").defineInRange("executeThreshold", 0.1, -Double.MAX_VALUE, Double.MAX_VALUE);
-        COUNTER_DAMAGE_RATIO = BUILDER.comment("反伤比例 - 受伤时将伤害以此比例反弹 (0.25 = 25%)").defineInRange("counterDamageRatio", 0.25, -Double.MAX_VALUE, Double.MAX_VALUE);
+        EXECUTE_THRESHOLD = BUILDER.comment("斩杀阈值 - 敌人血量低于此比例直接秒杀 (10 = 10%，0 = 关闭)").defineInRange("executeThreshold", 0.1, -Double.MAX_VALUE, Double.MAX_VALUE);
+        COUNTER_DAMAGE_RATIO = BUILDER.comment("反伤比例 - 受伤时将伤害以此比例反弹 (25 = 25%)").defineInRange("counterDamageRatio", 0.25, -Double.MAX_VALUE, Double.MAX_VALUE);
         COUNTER_INVULN_RESET = BUILDER.comment("反伤时重置攻击者无敌帧 (使反伤立即生效)").define("counterInvulnReset", true);
-        AOE_SPLASH_RATIO = BUILDER.comment("攻击命中时的AOE溅射伤害比例 (0.3 = 30%主伤害)").defineInRange("aoeSplashRatio", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
+        AOE_SPLASH_RATIO = BUILDER.comment("攻击命中时的AOE溅射伤害比例 (30 = 30%主伤害)").defineInRange("aoeSplashRatio", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
         AOE_SPLASH_RANGE = BUILDER.comment("AOE溅射范围 (格，0=关闭；上限 512 为引擎安全值)").defineInRange("aoeSplashRange", 4.0, -Double.MAX_VALUE, 512.0);
         EXTRA_HIT_DAMAGE = BUILDER.comment("每击额外附加固定伤害 (0=关闭)").defineInRange("extraHitDamage", 2.0, -Double.MAX_VALUE, Double.MAX_VALUE);
         EXTRA_HIT_COOLDOWN = BUILDER.comment("额外伤害冷却 (tick，防止高频触发)").defineInRange("extraHitCooldown", 2, Integer.MIN_VALUE, Integer.MAX_VALUE);
-        GLOW_DAMAGE_BONUS = BUILDER.comment("对发光生物的额外伤害倍率 (0.3 = +30%)").defineInRange("glowDamageBonus", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
+        GLOW_DAMAGE_BONUS = BUILDER.comment("对发光生物的额外伤害倍率 (30 = +30%)").defineInRange("glowDamageBonus", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
         BENEFICIAL_STRIP = BUILDER.comment("攻击时移除敌人有益效果").define("beneficialStrip", true);
         INFINITE_ARROWS = BUILDER.comment("射箭不消耗箭矢").define("infiniteArrows", true);
         IGNITE_CHANCE = BUILDER.comment("攻击点燃概率").defineInRange("igniteChance", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
@@ -330,9 +334,9 @@ public class EternalHeartConfig {
         BUILDER.push("战斗生存增强 (Enhanced Combat Survival)");
         KNOCKBACK_IMMUNITY = BUILDER.comment("击退免疫 (独立开关，与击退抗性属性独立)").define("knockbackImmunity", true);
         AUTO_POTION = BUILDER.comment("低血自动喝药水 - 生命低于阈值自动使用背包治疗药水").define("autoPotion", true);
-        AUTO_POTION_THRESHOLD = BUILDER.comment("自动喝药触发血量比例 (0.3 = 30%)").defineInRange("autoPotionThreshold", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
+        AUTO_POTION_THRESHOLD = BUILDER.comment("自动喝药触发血量比例 (30 = 30%)").defineInRange("autoPotionThreshold", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
         LIGHTNING_REFLECT = BUILDER.comment("受伤时连锁闪电反击攻击者").define("lightningReflect", true);
-        LIGHTNING_REFLECT_CHANCE = BUILDER.comment("闪电反击概率 (0.3 = 30%)").defineInRange("lightningReflectChance", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
+        LIGHTNING_REFLECT_CHANCE = BUILDER.comment("闪电反击概率 (30 = 30%)").defineInRange("lightningReflectChance", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
         KILL_CHAIN = BUILDER.comment("击杀连锁 - 击杀怪物时伤害周围同种生物").define("killChain", true);
         KILL_CHAIN_RANGE = BUILDER.comment("击杀连锁范围 (格；上限 512 为引擎安全值)").defineInRange("killChainRange", 8.0, -Double.MAX_VALUE, 512.0);
         BUILDER.pop();
@@ -409,7 +413,7 @@ public class EternalHeartConfig {
         WITHER_AURA_RANGE = BUILDER.comment("凋零光环范围 (格，0 = 关闭；上限 512 为引擎安全值)").defineInRange("witherAuraRange", 8.0, -Double.MAX_VALUE, 512.0);
         PEACE_AURA_RANGE = BUILDER.comment("和平光环范围 - 阻止敌对生物加入世界，包括载入和生成 (格，0 = 关闭；上限 512)").defineInRange("peaceAuraRange", 32.0, -Double.MAX_VALUE, 512.0);
         GROWTH_AURA_RANGE = BUILDER.comment("生长光环范围 - 加速周围作物生长 (格，0 = 关闭；上限 64，每周期要遍历 (2r+1)²×7 个方块)").defineInRange("growthAuraRange", 12.0, -Double.MAX_VALUE, 64.0);
-        GROWTH_AURA_CHANCE = BUILDER.comment("生长光环单次骨粉成功率 (0.5 = 50%，1 = 必定尝试)").defineInRange("growthAuraChance", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
+        GROWTH_AURA_CHANCE = BUILDER.comment("生长光环单次骨粉成功率 (50 = 50%，100 = 必定尝试)").defineInRange("growthAuraChance", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
         GROWTH_AURA_MAX_BLOCKS = BUILDER.comment("生长光环每周期最大催熟方块数 (上限 4096)").defineInRange("growthAuraMaxBlocks", 10, Integer.MIN_VALUE, 4096);
         GROWTH_AUTO_REPLANT = BUILDER.comment("自动补种 - 收获成熟作物后自动重新种植").define("growthAutoReplant", true);
         BUILDER.pop();
@@ -417,7 +421,7 @@ public class EternalHeartConfig {
         BUILDER.push("永怒系统 (Eternal Fury)");
         FURY_MAX_STACKS = BUILDER.comment("永怒最大层数").defineInRange("maxStacks", 20, Integer.MIN_VALUE, Integer.MAX_VALUE);
         FURY_DECAY_TICKS = BUILDER.comment("永怒衰减间隔 (tick)").defineInRange("decayTicks", 60, Integer.MIN_VALUE, Integer.MAX_VALUE);
-        FURY_DAMAGE_PER_STACK = BUILDER.comment("每层永怒伤害加成 (0.05 = 5%)").defineInRange("damagePerStack", 0.05, -Double.MAX_VALUE, Double.MAX_VALUE);
+        FURY_DAMAGE_PER_STACK = BUILDER.comment("每层永怒伤害加成 (5 = 5%)").defineInRange("damagePerStack", 0.05, -Double.MAX_VALUE, Double.MAX_VALUE);
         FURY_LIFESTEAL = BUILDER.comment("满层永怒生命窃取比例").defineInRange("lifesteal", 0.10, -Double.MAX_VALUE, Double.MAX_VALUE);
         KILL_FURY_BONUS = BUILDER.comment("击杀额外永怒层数").defineInRange("killFuryBonus", 3, Integer.MIN_VALUE, Integer.MAX_VALUE);
         LIFESTEAL_FOOD_RESTORE = BUILDER.comment("生命窃取时恢复饱食度 (每次窃取)").defineInRange("lifestealFoodRestore", 1.0, -Double.MAX_VALUE, Double.MAX_VALUE);
@@ -448,7 +452,7 @@ public class EternalHeartConfig {
         HEALTH_GUARD = BUILDER.comment("血量防篡改 - 拦截非伤害途径的生命值削减并立即回滚（防止被其它模组/机制强行改血）").define("healthGuard", true);
         MAX_HEALTH_GUARD = BUILDER.comment("生命上限保护 - 佩戴后最大生命值不会被削减（防止被偷取/封印生命上限）").define("maxHealthGuard", true);
         LETHAL_GUARD = BUILDER.comment("致死保护 - 单次致命伤害不会直接击杀，改为保留一定比例生命（防秒杀 / 防被收）").define("lethalGuard", true);
-        LETHAL_GUARD_RATIO = BUILDER.comment("致死保护保留生命比例 (0.15 = 保留最大生命的 15%，最低保留 1 点；≥1 等于免疫致命伤)").defineInRange("lethalGuardRatio", 0.15, -Double.MAX_VALUE, Double.MAX_VALUE);
+        LETHAL_GUARD_RATIO = BUILDER.comment("致死保护保留生命比例 (15 = 保留最大生命的 15%，最低保留 1 点；≥100 等于免疫致命伤)").defineInRange("lethalGuardRatio", 0.15, -Double.MAX_VALUE, Double.MAX_VALUE);
         LETHAL_GUARD_COOLDOWN = BUILDER.comment("致死保护冷却 (tick，冷却期间不再触发；0 = 无冷却)").defineInRange("lethalGuardCooldown", 600, Integer.MIN_VALUE, Integer.MAX_VALUE);
         KEEP_INVENTORY = BUILDER.comment("死亡保留物品 - 死亡时物品栏不掉落，重生后原样归还（防止掉落物被收走）").define("keepInventory", true);
         KEEP_EXPERIENCE = BUILDER.comment("死亡保留经验 - 死亡时经验不掉落，重生后原样归还").define("keepExperience", true);
@@ -478,7 +482,15 @@ public class EternalHeartConfig {
                         "把佩戴中的物品 ID 一并写入 RevelationFix 的「天启」豁免名单：",
                         "玩家戴上新饰品即自动保护，饰品被卸下且无人佩戴时自动移除",
                         "（依赖上面的「启示录兼容」总开关与「自定义饰品防收」列表，三者合并生效）")
-                .define("revelationfixAutoDetect", false);
+                .define("revelationfixAutoDetect", true);
+        BUILDER.pop();
+
+        BUILDER.push("渲染 (Rendering)");
+        SHARD_VEIL = BUILDER.comment(
+                        "碎片渲染 - 永恒之心的碎片环绕特效（拿在手上 / 戴在饰品栏时出现的碎片动画与悬停聚合面板）。",
+                        "关闭后完全恢复模组原版表现：碎片不再渲染，物品提示框照常直接显示",
+                        "（背包里悬停即见，无需按住 Shift；世界中也不再弹出碎片面板）。")
+                .define("shardVeil", true);
         BUILDER.pop();
 
         SPEC = BUILDER.build();

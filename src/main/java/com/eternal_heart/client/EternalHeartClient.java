@@ -42,4 +42,16 @@ public class EternalHeartClient {
         event.register(OPEN_PANEL);
         event.register(TIME_STOP);
     }
+
+    /**
+     * 注册「永恒之心·碎影」屏幕覆盖层（手持/佩戴饰品时的碎片层 + 按住 Shift 聚合出数据面板）。
+     *
+     * <p>用 {@code registerBelowAll}：碎片层画在<b>所有原版 HUD 之下</b> —— 血条、饥饿、经验、
+     * 物品栏、聊天都盖在碎片上面，不会再出现碎片压在物品栏/血条上的情况
+     * （用户 2026-09-23："把碎片显示弄在血条和物品栏以下，不能覆盖物品栏与血条"）。</p>
+     */
+    @SubscribeEvent
+    public static void registerGuiOverlays(net.minecraftforge.client.event.RegisterGuiOverlaysEvent event) {
+        event.registerBelowAll("eternal_heart_shards", new ShardVeilOverlay());
+    }
 }

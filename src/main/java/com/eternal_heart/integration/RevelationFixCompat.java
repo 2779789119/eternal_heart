@@ -56,7 +56,7 @@ public final class RevelationFixCompat {
     private static Set<String> lastAuto = Set.of();
     /** 事件驱动的「尽快重扫」标志（饰品变更 / 玩家上下线时置位）。 */
     private static boolean scanPending = false;
-    private static long lastScanTick = Long.MIN_VALUE;
+    private static long lastScanTick = -SCAN_INTERVAL;   // 修复：原为 Long.MIN_VALUE，tick - lastScanTick 首 tick 即溢出为负，导致定期扫描永不触发
     private static boolean lastWanted = false;
     private static boolean lastAutoDetect = false;
 

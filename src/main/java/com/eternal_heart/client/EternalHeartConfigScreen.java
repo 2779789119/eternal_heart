@@ -258,7 +258,14 @@ public class EternalHeartConfigScreen extends Screen {
             String comment = commentOf(entry.cv);
             if (comment != null) {
                 for (String line : comment.split("\n")) {
-                    if (!line.isBlank()) {
+                    if (line.isBlank()) continue;
+                    // Forge 会为 defineInRange 自动追加 "Range: min ~ max"；本项目把上限放开到
+                    // ±Double.MAX_VALUE，于是提示里显示成 ±1.7976931348623157E308（天文数字，可读性为零）
+                    // → 替换成人话
+                    if (line.contains("1.7976931348623157E308")) {
+                        lines.add(Component.translatable("config.eternal_heart.range.unlimited")
+                                .withStyle(style -> style.withColor(0xFFB9C2CE)));
+                    } else {
                         lines.add(Component.literal(line).withStyle(style -> style.withColor(0xFFB9C2CE)));
                     }
                 }
