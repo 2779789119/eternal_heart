@@ -17,7 +17,7 @@ plugins {
 // Mixin 支持：与成熟模组一致的底层注入能力（refmap 由注解处理器在编译期生成）
 apply plugin: 'org.spongepowered.mixin'
 
-version = '1.19.4'
+version = '1.19.40'
 group = 'com.eternal_heart'
 archivesBaseName = 'eternal_heart-永恒之心'
 

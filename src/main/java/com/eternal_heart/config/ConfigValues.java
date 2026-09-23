@@ -43,7 +43,9 @@ public final class ConfigValues {
             "REFLECT_PROJECTILE_CHANCE", "LOW_HP_THRESHOLD", "BOSS_DAMAGE_BONUS", "EXECUTE_THRESHOLD",
             "COUNTER_DAMAGE_RATIO", "AOE_SPLASH_RATIO", "GLOW_DAMAGE_BONUS", "IGNITE_CHANCE",
             "AUTO_POTION_THRESHOLD", "LIGHTNING_REFLECT_CHANCE", "KILL_HEAL_RATIO", "GROWTH_AURA_CHANCE",
-            "FURY_DAMAGE_PER_STACK", "FURY_LIFESTEAL", "LETHAL_GUARD_RATIO");
+            "FURY_DAMAGE_PER_STACK", "FURY_LIFESTEAL", "LETHAL_GUARD_RATIO",
+            // 修复：tooltip 走 percent()（×100）但此前不在白名单 → 面板填 30 会存成 30（倍率 30×）而不是 0.3
+            "COOLDOWN_RATIO");
 
     private ConfigValues() {}
 
