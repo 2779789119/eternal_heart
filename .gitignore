@@ -38,3 +38,15 @@ build_log2.txt
 build_output.txt
 build_output2.txt
 compile_log.txt
+
+# ModMind tool data
+.modmind/
+modmind.project.json
+
+# Dev / runtime dirs (not part of source)
+docs/
+mianban/
+tools/
+run-gametest/
+screen.txt
+shi_ting.ogg
