@@ -2,10 +2,10 @@
 
 还原泰拉瑞亚 Fargo 魂石模组 **「永恒之魂」** 的终极饰品 —— 一枚佩戴即开启数十项能力的 Curios 饰品。
 
-- **版本**：1.19.4
-- **适用平台**：Minecraft 1.20.1 · Forge 47.4+
+- **版本**：1.36.3
+- **适用平台**：Minecraft 1.20.1 · Forge 47.1.3+
 - **协议**：MIT
-- **说明**：改编自 Inolia_Zaicek 的 MineFargo
+- **说明**：灵感与美术参考自 Inolia_Zaicek 的 MineFargo（仅灵感来源，运行期不再依赖它）
 
 ## 功能一览
 
@@ -26,8 +26,11 @@
 
 其他特色：
 
-- **时停**：冻结周围实体与世界（含专属音效 `eternal_heart:shi_ting`）
-- **配置面板**：游戏内 GUI 直接调整 140+ 配置项，悬浮即见说明
+- **环绕光球 / 光环**：佩戴后玩家周身浮现一圈环绕旋转的发光球（默认 5 个，以玩家中点为球心；也可切回头顶圆环光环），数量 / 半径 / 球心高度 / 轨道倾角 / 颜色 / 转速 / 彩虹均可调
+- **炫彩提示框**：「永恒之心」提示框里的物品名与全部说明文字按彩虹色逐字渐变并随时间流动
+- **时停**：冻结周围实体与世界（含专属音效 `eternal_heart:shi_ting`）；再次按快捷键可提前关闭
+- **配置面板**：现代深色 GUI（胶囊分类 + 卡片行 + 滑块开关），直接调整 140+ 配置项，悬浮即见说明
+- **统一界面风格**：配置面板 / 名单选择器 / 配方与仪式编辑器共用一套主题组件（`client/ui`）
 - **图形化配方编辑器**：面板内 3×3 网格编辑自定义配方（有序 / 无序 / 熔炼），保存即生效
 - **负面效果黑 / 白名单**：指定效果强制清除或永久保护
 - **启示录兼容**：自动 / 手动维护 RevelationFix 的天启豁免名单（仅读写其公开配置）
@@ -39,10 +42,9 @@
 
 | 模组 | 版本要求 |
 |------|----------|
-| Forge | ≥ 47.4 |
+| Forge | ≥ 47.1.3 |
 | Minecraft | 1.20.1 |
 | Curios API | ≥ 5.14 |
-| MineFargo | ≥ 1.2（随仓库提供 `libs/mine_fargo-1.2.42-all.jar`） |
 
 ### 可选集成（运行时自动激活）
 
@@ -52,6 +54,7 @@
 | Caelus | 鞘翅飞行 |
 | AttributeFix | 解除血量上限 |
 | RevelationFix | 天启阶段饰品防收 |
+| YSM (是，史蒂夫模型) | 自定义玩家模型下照常显示头顶光环（自动切换到世界层渲染） |
 
 ## 游戏内命令
 
@@ -68,7 +71,7 @@
 /eternalheart attribute remove <属性>
 
 /eternalheart recipe reload                       手动重载自定义配方
-/eternalheart timestop                            手动触发时停
+/eternalheart timestop                            手动切换时停（发动 / 关闭）
 /eternalheart compat revelationfix [on|off|auto]  启示录兼容开关
 ```
 
@@ -78,6 +81,19 @@
 
 - JDK 17
 - Gradle（随仓库附带的 `gradlew.bat`，无需全局安装）
+
+### 第三方编译依赖（需自行放入 `libs/`）
+
+以下 jar 属于其他模组的发布物，**不入版本库**，克隆后请自行准备并放入 `libs/`，否则
+`build.gradle` 依赖解析会直接失败：
+
+| 文件 | 用途 | 来源 |
+|------|------|------|
+| `libs/ftb-ultimine-forge-2001.1.8.jar` | 连锁挖掘集成 | FTB Ultimine（Forge 2001.1.8） |
+| `libs/caelus-forge-3.2.0+1.20.1.jar` | 鞘翅飞行 API | Caelus API |
+| `libs/Pehkui-3.8.2+1.20.1-forge.jar` | 体型缩放 | Pehkui |
+
+三者均为 `compileOnly`，只在编译期做类型检查，不会打进产物；运行时缺失对应模组时相关集成自动关闭。
 
 ### 构建步骤
 
@@ -97,11 +113,6 @@ gradlew.bat clean build
 
 - `runClient` / `runServer`：开发环境启动（工作目录 `run/`）
 - `gameTestServer`：游戏测试服务器（工作目录 `run-gametest/`，命名空间 `eternal_heart`）
-- 跑测试时若 MineFargo 内嵌依赖与 mixin 环境冲突，可加 `-PnoMineFargo` 将其移出 classpath：
-
-```bat
-gradlew.bat -PnoMineFargo runGameTestServer
-```
 
 ## 项目结构
 

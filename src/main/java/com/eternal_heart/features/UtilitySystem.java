@@ -39,6 +39,7 @@ import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.entity.living.LivingEvent.LivingTickEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.level.BlockEvent;
 
 import java.util.ArrayList;
@@ -171,6 +172,55 @@ public class UtilitySystem implements IFeature {
         if (pending != null && pending.activated()) Integrations.deactivateUltimine(player);
         TORCH_SLOT.remove(player.getUUID());
         BUCKETS.remove(player.getUUID());
+    }
+
+    // ============================================================
+    //  瞬挖
+    // ============================================================
+
+    /**
+     * 是否允许挖穿「不可破坏」方块（硬度 -1：基岩 / 屏障 / 命令方块 / 结构方块等）。
+     *
+     * <p>瞬挖与独立的「破不可破坏」开关同时开启、且确实佩戴时才放行；
+     * 由 {@code BlockBehaviourMixin}（进度）与 {@code ServerPlayerGameModeMixin}
+     * （{@code GameMasterBlock} 保护）共用同一判定。</p>
+     */
+    public static boolean canBreakUnbreakable(Player player) {
+        return ConfigValues.get(EternalHeartConfig.INSTANT_MINE)
+                && ConfigValues.get(EternalHeartConfig.INSTANT_MINE_UNBREAKABLE)
+                && EquipTracker.isEquipped(player);
+    }
+
+    /**
+     * 任意方块 1 tick 挖穿。
+     *
+     * <p>原版进度公式（{@code BlockBehaviour#getDestroyProgress}）：
+     * {@code 进度 = 挖掘速度 / 硬度 / (正确工具 ? 30 : 100)}，
+     * 因此「一次结算就达到 1.0」所需的挖掘速度 = {@code 硬度 × 30(或 100)}。
+     * 这里按实际工具判定选择除数，并加 1 点余量抵消浮点误差。</p>
+     *
+     * <p>硬度 {@code < 0} 是「不可破坏」（基岩 / 屏障等）：原版对它们恒返回 0 进度，
+     * 抬速度没有意义，直接跳过；硬度 0 的方块本来就是一碰就碎。</p>
+     *
+     * <p>工具判定由 {@code PlayerEvent.HarvestCheck} 统一置为「正确工具」，
+     * 所以这里的除数实际恒为 30；仍按实时判定取值，
+     * 以防其它模组在更晚的优先级把采集结果改回 false。</p>
+     *
+     * <p>客户端与服务端都会调用本方法：客户端决定何时发破坏包，服务端
+     * （{@code ServerPlayerGameMode.handleBlockBreakAction}）用它判定是否「insta mine」，
+     * 只改一侧会互相打架。</p>
+     */
+    public static void applyInstantMine(PlayerEvent.BreakSpeed event) {
+        Player player = event.getEntity();
+        BlockState state = event.getState();
+        BlockPos pos = event.getPosition().orElseGet(player::blockPosition);
+
+        float hardness = state.getDestroySpeed(player.level(), pos);
+        if (!Float.isFinite(hardness) || hardness <= 0f) return;
+
+        int divisor = player.hasCorrectToolForDrops(state) ? 30 : 100;
+        float needed = hardness * divisor + 1f;
+        if (needed > event.getNewSpeed()) event.setNewSpeed(needed);
     }
 
     // ============================================================
@@ -357,6 +407,7 @@ public class UtilitySystem implements IFeature {
     // ============================================================
 
     private void applyMagnet(Player player) {
+        if (!ConfigValues.get(EternalHeartConfig.MAGNET_ENABLED)) return;
         double pullRange = ConfigValues.get(EternalHeartConfig.MAGNET_RANGE);
         double instantRange = ConfigValues.get(EternalHeartConfig.MAGNET_INSTANT_RANGE);
         if (pullRange <= 0 && instantRange <= 0) return;
@@ -382,6 +433,7 @@ public class UtilitySystem implements IFeature {
     // ============================================================
 
     private void applyGlow(Player player) {
+        if (!ConfigValues.get(EternalHeartConfig.GLOW_ENABLED)) return;
         double range = ConfigValues.get(EternalHeartConfig.GLOW_RANGE);
         if (range <= 0) return;
         glowAround(player, range);

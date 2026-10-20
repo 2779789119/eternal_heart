@@ -1,12 +1,14 @@
 package com.eternal_heart.client;
 
+import com.eternal_heart.client.ui.UiButton;
+import com.eternal_heart.client.ui.UiEditBox;
+import com.eternal_heart.client.ui.UiScreen;
+import com.eternal_heart.client.ui.UiTheme;
 import com.eternal_heart.core.Numbers;
 import com.eternal_heart.features.CustomAttributes;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
@@ -18,25 +20,16 @@ import org.lwjgl.glfw.GLFW;
  * <p>数值语义为修饰符原始 amount（不做总倍率换算），操作类型在
  * addition / multiply_base / multiply_total 之间循环切换。</p>
  */
-public class AttributeValueScreen extends Screen {
+public class AttributeValueScreen extends UiScreen {
 
-    private static final int COL_OVERLAY = 0xB0040609;
-    private static final int COL_PANEL = 0xF60E1521;
-    private static final int COL_BORDER = 0xFF9A7B3F;
-    private static final int COL_GOLD = 0xFFE8C860;
-    private static final int COL_TEXT = 0xFFE6EAF0;
-    private static final int COL_TEXT_DIM = 0xFF8A93A0;
+    private static final int FOOTER_H = 38;
 
     private final AttributeListScreen parent;
     private final ResourceLocation attribute;
     private final String initialValue;
     private AttributeModifier.Operation operation;
-    private EditBox valueBox;
-    private Button operationBtn;
-    private Button confirmBtn;
-    private Button removeBtn;
-    private Button cancelBtn;
-    private int panelX, panelY, panelW, panelH;
+    private UiEditBox valueBox;
+    private UiButton operationBtn;
 
     public AttributeValueScreen(AttributeListScreen parent, ResourceLocation attribute) {
         super(Component.translatable("config.eternal_heart.attribute_value.title"));
@@ -49,12 +42,9 @@ public class AttributeValueScreen extends Screen {
 
     @Override
     protected void init() {
-        panelW = Math.max(230, Math.min(this.width - 12, 300));
-        panelH = 134;
-        panelX = (this.width - panelW) / 2;
-        panelY = (this.height - panelH) / 2;
+        layoutPanel(380, 200, 280, 196);
 
-        valueBox = new EditBox(this.font, panelX + 12, panelY + 60, panelW - 24, 18,
+        valueBox = new UiEditBox(this.font, panelX + 16, panelY + 84, panelW - 32, 22,
                 Component.translatable("config.eternal_heart.attribute_value.value"));
         valueBox.setMaxLength(48);
         // 与配置面板一致：允许符号与科学计数法的中间态
@@ -63,22 +53,21 @@ public class AttributeValueScreen extends Screen {
         valueBox.setValue(initialValue);
         this.addRenderableWidget(valueBox);
 
-        operationBtn = this.addRenderableWidget(Button.builder(operationText(), b -> {
-            int next = (CustomAttributes.OPERATIONS.indexOf(operation) + 1) % CustomAttributes.OPERATIONS.size();
-            operation = CustomAttributes.OPERATIONS.get(next);
-            b.setMessage(operationText());
-        }).bounds(panelX + 12, panelY + 82, panelW - 24, 18).build());
+        operationBtn = this.addRenderableWidget(UiButton.secondary(
+                panelX + 16, panelY + 114, panelW - 32, 22, operationText(), () -> {
+                    int next = (CustomAttributes.OPERATIONS.indexOf(operation) + 1)
+                            % CustomAttributes.OPERATIONS.size();
+                    operation = CustomAttributes.OPERATIONS.get(next);
+                    operationBtn.setMessage(operationText());
+                }));
 
-        int btnY = panelY + panelH - 24;
-        confirmBtn = this.addRenderableWidget(Button.builder(
-                        Component.translatable("config.eternal_heart.attribute_value.confirm"), b -> confirm())
-                .bounds(panelX + panelW - 8 - 58, btnY, 58, 18).build());
-        removeBtn = this.addRenderableWidget(Button.builder(
-                        Component.translatable("config.eternal_heart.attribute_value.remove"), b -> remove())
-                .bounds(panelX + panelW - 8 - 58 * 2 - 4, btnY, 58, 18).build());
-        cancelBtn = this.addRenderableWidget(Button.builder(
-                        Component.translatable("config.eternal_heart.attribute_value.cancel"), b -> onClose())
-                .bounds(panelX + panelW - 8 - 58 * 3 - 8, btnY, 58, 18).build());
+        int btnY = panelY + panelH - FOOTER_H + 8;
+        this.addRenderableWidget(UiButton.primary(panelX + panelW - 16 - 64, btnY, 64, 22,
+                Component.translatable("config.eternal_heart.attribute_value.confirm"), this::confirm));
+        this.addRenderableWidget(UiButton.danger(panelX + panelW - 16 - 64 - 8 - 64, btnY, 64, 22,
+                Component.translatable("config.eternal_heart.attribute_value.remove"), this::remove));
+        this.addRenderableWidget(UiButton.ghost(panelX + panelW - 16 - 64 - 8 - 64 - 8 - 64, btnY, 64, 22,
+                Component.translatable("config.eternal_heart.attribute_value.cancel"), this::onClose));
     }
 
     private Component operationText() {
@@ -93,7 +82,7 @@ public class AttributeValueScreen extends Screen {
             parent.put(attribute, value, operation);
             Minecraft.getInstance().setScreen(parent);
         } catch (NumberFormatException e) {
-            valueBox.setTextColor(0xFFFF7777);
+            valueBox.setTextColor(UiTheme.DANGER);
         }
     }
 
@@ -104,35 +93,27 @@ public class AttributeValueScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float pt) {
-        g.fill(0, 0, this.width, this.height, COL_OVERLAY);
-        g.fill(panelX, panelY, panelX + panelW, panelY + panelH, COL_PANEL);
-        g.fill(panelX, panelY, panelX + panelW, panelY + 1, COL_BORDER);
-        g.fill(panelX, panelY + panelH - 1, panelX + panelW, panelY + panelH, COL_BORDER);
-        g.fill(panelX, panelY, panelX + 1, panelY + panelH, COL_BORDER);
-        g.fill(panelX + panelW - 1, panelY, panelX + panelW, panelY + panelH, COL_BORDER);
+        renderBackground(g);
+        drawPanel(g);
 
-        g.drawCenteredString(this.font, tr("title"), panelX + panelW / 2, panelY + 8, COL_GOLD);
-        g.drawString(this.font, trim(Component.translatable(CustomAttributes.displayNameKey(attribute)).getString(),
-                panelW - 24), panelX + 12, panelY + 26, COL_TEXT);
-        g.drawString(this.font, trim(attribute.toString(), panelW - 24),
-                panelX + 12, panelY + 38, COL_TEXT_DIM);
-        g.drawString(this.font, tr("value"), panelX + 12, panelY + 50, COL_TEXT_DIM);
+        // 顶部强调线
+        UiTheme.hGradient(g, panelX + 18, panelX + panelW / 2, panelY + 1, 0x005EEAD4, 0xA05EEAD4);
+        UiTheme.hGradient(g, panelX + panelW / 2, panelX + panelW - 18, panelY + 1, 0xA05EEAD4, 0x005EEAD4);
+        g.drawString(this.font, Component.literal(tr("title")).withStyle(ChatFormatting.BOLD),
+                panelX + 16, panelY + 12, UiTheme.TEXT, false);
 
-        valueBox.render(g, mx, my, pt);
-        operationBtn.render(g, mx, my, pt);
-        confirmBtn.render(g, mx, my, pt);
-        removeBtn.render(g, mx, my, pt);
-        cancelBtn.render(g, mx, my, pt);
+        String name = Component.translatable(CustomAttributes.displayNameKey(attribute)).getString();
+        g.drawString(this.font, trim(name, panelW - 32), panelX + 16, panelY + 38, UiTheme.TEXT);
+        g.drawString(this.font, trim(attribute.toString(), panelW - 32), panelX + 16, panelY + 52,
+                UiTheme.TEXT_MUTED);
+        g.drawString(this.font, tr("value"), panelX + 16, panelY + 70, UiTheme.TEXT_DIM);
+
+        drawFooterDivider(g, FOOTER_H);
+        super.render(g, mx, my, pt);
     }
 
     private String tr(String key, Object... args) {
         return Component.translatable("config.eternal_heart.attribute_value." + key, args).getString();
-    }
-
-    private String trim(String s, int w) {
-        if (w <= 0) return "";
-        if (this.font.width(s) <= w) return s;
-        return this.font.plainSubstrByWidth(s, Math.max(0, w - 6)) + "…";
     }
 
     @Override

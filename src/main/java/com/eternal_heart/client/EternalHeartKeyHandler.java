@@ -33,7 +33,7 @@ public class EternalHeartKeyHandler {
             // 权限的权威判定在服务端；被拒绝时由服务端返回 forbidden 并提示
             ConfigNetwork.requestEditor();
         }
-        // 时停：客户端只发请求，是否允许由服务端判定（失败原因走动作栏消息）
+        // 时停：切换语义（未发动则发动，自己已发动则关闭）；客户端只发请求，判定在服务端
         while (EternalHeartClient.TIME_STOP.consumeClick()) {
             Minecraft mc = Minecraft.getInstance();
             if (mc.screen != null || mc.player == null) continue;

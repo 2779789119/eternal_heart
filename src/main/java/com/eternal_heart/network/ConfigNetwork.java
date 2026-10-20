@@ -104,9 +104,17 @@ public final class ConfigNetwork {
             return;
         }
         publish();
-        // 配置已保存：立即重新注入自定义配方 —— 面板里改完配方点「保存并关闭」即生效，
-        // 无需再手动执行 /eternalheart recipe reload（inject 幂等，未改配方时开销可忽略）
-        CustomRecipes.inject(ServerLifecycleHooks.getCurrentServer());
+        // 配置已保存：只有本次改动确实涉及配方时，才重建配方表 ——
+        // 面板里改完配方点「保存并关闭」即生效，无需再手动执行 /eternalheart recipe reload。
+        //
+        // 为什么不无条件注入：inject 并不便宜。它要把整张配方表的索引整体重建
+        //（RecipeManager.replaceRecipes），再把「整张配方表」广播给所有玩家
+        //（客户端收到后要重新解析全部配方并重建配方书）—— 代价与配方总数成正比，
+        // 上万条配方的整合包里是数十~上百毫秒的卡顿。改数值 / 开关时配方没有任何变化，
+        // 完全不该付这份开销（这也是「保存时卡一下」的唯一来源）。
+        if (patch.keySet().stream().anyMatch(ConfigValues::isRecipeKey)) {
+            CustomRecipes.inject(ServerLifecycleHooks.getCurrentServer());
+        }
         send(player, false, "saved");
     }
 
@@ -122,7 +130,8 @@ public final class ConfigNetwork {
         Debuffs.invalidate();
         AttributeFeature.refreshAllOnline();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            if (EquipTracker.query(player)) FurySystem.refreshEffect(player);
+            // 用严格查询：数据不可用时不能当作已佩戴，否则会刷新未佩戴玩家的永怒效果
+            if (EquipTracker.queryDefinite(player)) FurySystem.refreshEffect(player);
             send(player, false, "sync");
         }
     }

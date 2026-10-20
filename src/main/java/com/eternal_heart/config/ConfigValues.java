@@ -19,8 +19,8 @@ public final class ConfigValues {
      */
     public static final int MAX_JSON_LENGTH = 1 << 18;
 
-    /** 自由文本列表单个元素的长度上限（配方 JSON 远长于普通 ID）。 */
-    private static final int MAX_FREE_FORM_TEXT = 1024;
+    /** 自由文本列表单个元素的长度上限（配方 / 仪式 JSON 远长于普通 ID）。 */
+    private static final int MAX_FREE_FORM_TEXT = 2048;
     private static final Gson GSON = new Gson();
     private static final Map<String, ForgeConfigSpec.ConfigValue<?>> VALUES = collect();
     /**
@@ -36,7 +36,7 @@ public final class ConfigValues {
             "SPEED_BURST_DURATION", "DAMAGE_AURA_TICK_INTERVAL", "FURY_DECAY_TICKS", "AUTO_FISH_INTERVAL",
             "LETHAL_GUARD_COOLDOWN", "ITEM_GUARD_TICKS");
     /** 允许「自由格式」条目的列表配置（元素不是纯资源 ID，另有专门校验规则）。 */
-    private static final Set<String> FREE_FORM_LISTS = Set.of("EXTRA_ATTRIBUTES", "CUSTOM_RECIPES");
+    private static final Set<String> FREE_FORM_LISTS = Set.of("EXTRA_ATTRIBUTES", "CUSTOM_RECIPES", "CUSTOM_RITUALS");
     private static final Set<String> PERCENT = Set.of("KNOCKBACK_RESIST", "MOVEMENT_SPEED",
             "DAMAGE_REDUCTION", "FALL_DAMAGE_RATIO", "REFLECT_RATIO", "EXPLOSION_RESIST",
             "DAMAGE_CAP_RATIO", "PROJECTILE_RESIST", "MAGIC_RESIST", "DODGE_CHANCE",
@@ -44,6 +44,7 @@ public final class ConfigValues {
             "COUNTER_DAMAGE_RATIO", "AOE_SPLASH_RATIO", "GLOW_DAMAGE_BONUS", "IGNITE_CHANCE",
             "AUTO_POTION_THRESHOLD", "LIGHTNING_REFLECT_CHANCE", "KILL_HEAL_RATIO", "GROWTH_AURA_CHANCE",
             "FURY_DAMAGE_PER_STACK", "FURY_LIFESTEAL", "LETHAL_GUARD_RATIO",
+            "FURY_CRIT_CHANCE", "FURY_CRIT_DAMAGE_BONUS", "KILL_CHAIN_RATIO",
             // 修复：tooltip 走 percent()（×100）但此前不在白名单 → 面板填 30 会存成 30（倍率 30×）而不是 0.3
             "COOLDOWN_RATIO");
 
@@ -69,6 +70,19 @@ public final class ConfigValues {
     }
 
     public static Map<String, ForgeConfigSpec.ConfigValue<?>> entries() { return VALUES; }
+
+    /**
+     * 该配置键是否为「配方类」配置。
+     *
+     * <p>保存时<b>只有</b>这类配置变化才需要重建配方表：重建会把整张配方表的索引整体重置
+     * （{@code RecipeManager.replaceRecipes}），并把整表广播给客户端（客户端随即重建配方书），
+     * 代价与配方总数成正比 —— 大型整合包上万条配方时是数十~上百毫秒的卡顿。
+     * 而改数值 / 开关时配方根本没变，不该付这份开销。</p>
+     */
+    public static boolean isRecipeKey(String key) {
+        return key.equals(KEYS.get(EternalHeartConfig.CUSTOM_RECIPES))
+                || key.equals(KEYS.get(EternalHeartConfig.CUSTOM_RITUALS));
+    }
 
     /** Remote snapshots never call ConfigValue.set: NightConfig may auto-save setters to disk. */
     public static void setRemote(Map<String, Object> values) { remoteValues = Map.copyOf(values); }

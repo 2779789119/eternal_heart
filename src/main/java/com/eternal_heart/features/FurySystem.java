@@ -42,13 +42,6 @@ public class FurySystem implements IFeature {
     /** 永怒效果持续时间（tick）。每次叠层都会刷新，正常情况下不会自然消失。 */
     private static final int FURY_EFFECT_DURATION = 400;
 
-    /** 非原版暴击时的额外补判概率；保留原版暴击成立条件。 */
-    private static final float FURY_CRIT_CHANCE = 0.5f;
-    /** 暴击额外伤害加成（与 tooltip「暴击时 +10%」一致），叠加在原版 1.5 倍之上。 */
-    private static final float FURY_CRIT_DAMAGE_BONUS = 0.10f;
-    /** 原版暴击基础倍率。 */
-    private static final float VANILLA_CRIT_MULTIPLIER = 1.5f;
-
     private static final PlayerScoped<Fury> STATES = new PlayerScoped<>();
 
     /** 单玩家的永怒状态。 */
@@ -229,18 +222,20 @@ public class FurySystem implements IFeature {
     @Override
     public void onCriticalHit(Player player, CriticalHitEvent event) {
         boolean critical = event.isVanillaCritical();
+        float critBonus = ConfigValues.get(EternalHeartConfig.FURY_CRIT_DAMAGE_BONUS).floatValue();
 
         if (!critical) {
-            // 非原版暴击时再做 50% 补判，不改变原版暴击的成立条件。
-            if (player.getRandom().nextFloat() < FURY_CRIT_CHANCE) {
+            // 非原版暴击时再按配置概率补判，不改变原版暴击的成立条件。
+            if (player.getRandom().nextFloat() < ConfigValues.get(EternalHeartConfig.FURY_CRIT_CHANCE).floatValue()) {
                 event.setResult(Event.Result.ALLOW);
-                // 强制暴击默认倍率为 1.0，需补回原版 1.5 倍基础，再叠加 +10%
-                event.setDamageModifier(VANILLA_CRIT_MULTIPLIER + FURY_CRIT_DAMAGE_BONUS);
+                // 强制暴击的可配置基础倍率（默认补回原版 1.5 倍），再叠加暴击伤害加成
+                event.setDamageModifier(
+                        ConfigValues.get(EternalHeartConfig.FURY_CRIT_MULTIPLIER).floatValue() + critBonus);
                 critical = true;
             }
         } else {
-            // 原版暴击：叠加 +10% 暴击伤害
-            event.setDamageModifier(event.getDamageModifier() + FURY_CRIT_DAMAGE_BONUS);
+            // 原版暴击：叠加暴击伤害加成
+            event.setDamageModifier(event.getDamageModifier() + critBonus);
         }
 
         if (critical) {

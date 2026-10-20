@@ -17,6 +17,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.common.util.FakePlayerFactory;
 import net.minecraftforge.event.entity.living.LivingDamageEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
@@ -289,6 +290,48 @@ public final class RepairGameTests {
             ConfigValues.clearRemote();
         }
         close(ConfigValues.get(EternalHeartConfig.ATTACK_DAMAGE), local, "Disconnect did not restore local value");
+        helper.succeed();
+    }
+
+    /**
+     * 死亡保留：清空背包（掉落为空）与归还两条路径都必须成立。
+     *
+     * <p>回归场景：复活类模组（灵魂石 / 不死图腾）在比我们更晚的优先级取消死亡事件，
+     * 必须把已经清空的背包原样还回去，否则就是「复活了却既没有物品也没有掉落物」。</p>
+     */
+    @GameTest(template = "empty")
+    public static void deathKeepIsUndoneWhenDeathIsCancelled(GameTestHelper helper) {
+        Player player = helper.makeMockPlayer();
+        withConfig(Map.of("KEEP_INVENTORY", true, "KEEP_EXPERIENCE", true), () -> {
+            var inventory = player.getInventory();
+            inventory.clearContent();
+            inventory.setItem(0, new ItemStack(Items.DIAMOND, 5));
+            inventory.setItem(10, new ItemStack(Items.NETHERITE_SWORD));
+            player.experienceLevel = 30;
+            player.totalExperience = 300;
+
+            AegisSystem aegis = new AegisSystem();
+            LivingDeathEvent death = new LivingDeathEvent(player, player.damageSources().generic());
+            aegis.onPlayerDeath(player, death);
+            check(inventory.isEmpty(), "Death protection must empty the inventory so nothing can be looted");
+
+            // 复活类模组取消死亡 → 收尾归还原样
+            death.setCanceled(true);
+            AegisSystem.undoDeath(player);
+            check(inventory.getItem(0).is(Items.DIAMOND) && inventory.getItem(0).getCount() == 5,
+                    "Cancelled death lost the hotbar stack");
+            check(inventory.getItem(10).is(Items.NETHERITE_SWORD), "Cancelled death lost the main inventory slot");
+            check(player.experienceLevel == 30 && player.totalExperience == 300,
+                    "Cancelled death lost experience");
+
+            // 真死路径：重生归还，且重复调用不会复制物品
+            aegis.onPlayerDeath(player, new LivingDeathEvent(player, player.damageSources().generic()));
+            AegisSystem.restoreOnRespawn(player, player, true);
+            check(inventory.getItem(0).is(Items.DIAMOND) && inventory.getItem(0).getCount() == 5,
+                    "Respawn restore did not return the item to its original slot");
+            AegisSystem.restoreOnRespawn(player, player, true);
+            check(inventory.countItem(Items.DIAMOND) == 5, "Repeated restore duplicated items");
+        });
         helper.succeed();
     }
 }

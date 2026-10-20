@@ -5,12 +5,17 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "eternal_heart.refmap.json",
   "mixins": [
+    "BlockBehaviourMixin",
+    "CurioInventoryWrapperMixin",
     "EntityFreezeMixin",
     "ItemCooldownsMixin",
+    "ItemStackMixin",
     "LevelFreezeMixin",
     "LivingEntityMixin",
     "PlayerAmmoMixin",
-    "PlayerCooldownOwnerMixin"
+    "PlayerCooldownOwnerMixin",
+    "RangedAttributeMixin",
+    "ServerPlayerGameModeMixin"
   ],
   "client": [],
   "server": [],

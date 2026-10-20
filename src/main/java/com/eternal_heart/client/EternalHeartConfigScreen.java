@@ -1,22 +1,24 @@
 package com.eternal_heart.client;
 
 import com.eternal_heart.EternalHeartConfig;
+import com.eternal_heart.client.ui.UiButton;
+import com.eternal_heart.client.ui.UiEditBox;
+import com.eternal_heart.client.ui.UiScreen;
+import com.eternal_heart.client.ui.UiSwitch;
+import com.eternal_heart.client.ui.UiTheme;
 import com.eternal_heart.config.ConfigValues;
 import com.eternal_heart.network.ConfigNetwork;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Renderable;
-import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.common.ForgeConfigSpec;
 import org.lwjgl.glfw.GLFW;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -25,36 +27,31 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Server-authorized config editor. Widgets edit a draft; Save commits it on the server. */
-public class EternalHeartConfigScreen extends Screen {
+/**
+ * Server-authorized config editor.
+ *
+ * <p>视觉：深色石板面板 + 青绿点缀；左侧为胶囊式分类导航，右侧每项配置是一张
+ * 「名称 / 说明 / 控件」卡片。控件编辑草稿，保存后由服务器统一应用。</p>
+ */
+public class EternalHeartConfigScreen extends UiScreen {
 
     // ===================== 布局常量 =====================
-    private static final int MAX_PANEL_W = 640;   // 面板最大宽度
-    private static final int MAX_PANEL_H = 540;   // 面板最大高度
-    private static final int HEADER_H = 34;       // 顶部标题区高度
-    private static final int FOOTER_H = 26;       // 底部状态区高度
-    private static final int CAT_W = 86;          // 左侧分类栏宽度
-    private static final int CAT_ITEM_H = 16;     // 分类项高度
-    private static final int CAT_STEP = 18;       // 分类项步进（含间隔）
-    private static final int ROW_H = 24;          // 配置行高度
-    private static final int HEADER_ROW_H = 22;   // 分类标题行高度
-    private static final int NUM_BOX_W = 110;     // 数值输入框宽度（长数字完整可读可编辑）
-
-    // ===================== 配色（深蓝夜空 + 暗金点缀）=====================
-    private static final int COL_OVERLAY = 0xB0040609;      // 全屏遮罩
-    private static final int COL_PANEL = 0xF60E1521;        // 面板主体
-    private static final int COL_SIDEBAR = 0x50060A12;      // 左栏更深底色
-    private static final int COL_BORDER = 0xFF9A7B3F;       // 外边框（暗金）
-    private static final int COL_BORDER_IN = 0x26FFFFFF;    // 内衬微光线
-    private static final int COL_GOLD = 0xFFE8C860;         // 主金色
-    private static final int COL_TEXT = 0xFFE6EAF0;         // 行名亮白
-    private static final int COL_TEXT_DIM = 0xFF8A93A0;     // 次要灰字
-    private static final int COL_ROW_ALT = 0x08FFFFFF;      // 交替行底色
-    private static final int COL_ROW_HOVER = 0x16FFFFFF;    // 行悬停高亮
+    private static final int MAX_PANEL_W = 780;   // 面板最大宽度
+    private static final int MAX_PANEL_H = 560;   // 面板最大高度
+    private static final int HEADER_H = 52;       // 顶部标题区高度
+    private static final int FOOTER_H = 38;       // 底部状态区高度
+    private static final int CAT_W = 132;         // 左侧分类栏宽度
+    private static final int CAT_ITEM_H = 22;     // 分类胶囊高度
+    private static final int CAT_STEP = 26;       // 分类胶囊步进（含间隔）
+    private static final int ROW_H = 34;          // 配置卡片高度
+    private static final int ROW_GAP = 4;         // 卡片间距
+    private static final int ROW_STEP = ROW_H + ROW_GAP;
+    private static final int HEADER_ROW_H = 28;   // 分类标题行高度
+    private static final int NUM_BOX_W = 118;     // 数值输入框宽度
 
     // ===================== 面板几何（init 时计算，render 直接使用）=====================
-    private int panelX, panelY, panelW, panelH;
     private int contentX1, contentX2, contentTop, contentBot;
+    private int sidebarX1, sidebarX2;
 
     // ===================== 状态 =====================
     private final List<Entry> entries = new ArrayList<>();       // 全部配置项
@@ -67,9 +64,11 @@ public class EternalHeartConfigScreen extends Screen {
     private int scroll = 0, scrollMax = 0;                       // 内容滚动
     private int catScroll = 0, catScrollMax = 0;                 // 分类栏滚动
     private int contentH = 0;                                    // 过滤后内容总高
-    private EditBox searchBox;
-    private Button closeBtn;
-    private Button cancelBtn;
+    private UiEditBox searchBox;
+    private UiButton closeBtn;
+    private UiButton cancelBtn;
+    /** 「饰品融合」分类里的固定入口行（不是配置项：开关状态存在物品 NBT 上）。 */
+    private UiButton fusionEntryBtn;
     private final Map<String, Object> draft = new LinkedHashMap<>();
     private final Map<String, Object> baseline = new LinkedHashMap<>();
     private long baseRevision;
@@ -110,11 +109,19 @@ public class EternalHeartConfigScreen extends Screen {
             if (!categoryOrder.contains(e.category)) categoryOrder.add(e.category);
         }
 
+        // 「饰品融合」分类顶部的固定入口：打开逐条开关界面。
+        // 它不是一个配置项（状态存在物品 NBT 上），所以不进 entries，只按分类视图单独绘制。
+        this.fusionEntryBtn = UiButton.secondary(0, 0, 64, 20,
+                Component.translatable("config.eternal_heart.fusion.open"),
+                () -> Minecraft.getInstance().setScreen(new FusionToggleScreen(this)));
+        this.fusionEntryBtn.visible = false;
+        this.rowWidgets.add(this.fusionEntryBtn);
+        this.addRenderableWidget(this.fusionEntryBtn);
+
         // 搜索框（header 右侧）
-        int sw = Math.min(170, this.panelW / 3);
-        this.searchBox = new EditBox(this.font, this.panelX + this.panelW - sw - 10,
-                this.panelY + 9, sw, 16, Component.translatable("config.eternal_heart.search"));
-        this.searchBox.setHint(Component.translatable("config.eternal_heart.search_hint"));
+        int sw = Math.min(220, this.panelW / 3);
+        this.searchBox = new UiEditBox(this.font, this.panelX + this.panelW - sw - 16,
+                this.panelY + 16, sw, 20, Component.translatable("config.eternal_heart.search_hint"));
         this.searchBox.setMaxLength(32);
         this.searchBox.setValue(lastSearch); // resize 恢复（responder 幂等）
         this.searchBox.setResponder(s -> {
@@ -124,28 +131,26 @@ public class EternalHeartConfigScreen extends Screen {
         });
         this.addRenderableWidget(this.searchBox);
 
-        // 关闭按钮（footer 右侧）
-        this.closeBtn = this.addRenderableWidget(Button.builder(Component.translatable("config.eternal_heart.save"),
-                        b -> this.onClose())
-                .bounds(this.panelX + this.panelW - 104, this.panelY + this.panelH - FOOTER_H + 4, 96, 18)
-                .build());
-
-        this.cancelBtn = this.addRenderableWidget(Button.builder(Component.translatable("gui.cancel"),
-                        b -> Minecraft.getInstance().setScreen(null))
-                .bounds(this.panelX + this.panelW - 166, this.panelY + this.panelH - FOOTER_H + 4, 58, 18).build());
+        // 底部操作按钮
+        int footerTop = this.panelY + this.panelH - FOOTER_H;
+        this.closeBtn = this.addRenderableWidget(UiButton.primary(
+                this.panelX + this.panelW - 16 - 118, footerTop + 8, 118, 22,
+                Component.translatable("config.eternal_heart.save"), this::onClose));
+        this.cancelBtn = this.addRenderableWidget(UiButton.ghost(
+                this.panelX + this.panelW - 16 - 118 - 8 - 72, footerTop + 8, 72, 22,
+                Component.translatable("gui.cancel"), () -> Minecraft.getInstance().setScreen(null)));
         applyFilter();
     }
 
     /** 计算面板几何（居中 + 边界保护） */
     private void computeGeometry() {
-        this.panelW = Math.min(this.width - 12, MAX_PANEL_W);
-        this.panelH = Math.min(this.height - 12, MAX_PANEL_H);
-        this.panelX = (this.width - this.panelW) / 2;
-        this.panelY = (this.height - this.panelH) / 2;
+        layoutPanel(MAX_PANEL_W, MAX_PANEL_H, 540, 380);
         this.contentTop = this.panelY + HEADER_H;
         this.contentBot = this.panelY + this.panelH - FOOTER_H;
-        this.contentX1 = this.panelX + CAT_W + 4;
-        this.contentX2 = this.panelX + this.panelW - 7; // 右侧留出滚动条
+        this.sidebarX1 = this.panelX + 8;
+        this.sidebarX2 = this.panelX + CAT_W - 8;
+        this.contentX1 = this.panelX + CAT_W + 10;
+        this.contentX2 = this.panelX + this.panelW - 12; // 右侧留出滚动条
     }
 
     /** 根据搜索词 / 选中分类重建可见列表，并同步内容总高 */
@@ -169,7 +174,7 @@ public class EternalHeartConfigScreen extends Screen {
             }
         }
         // 内容总高（「全部」/ 搜索视图含分类标题行）
-        contentH = 0;
+        contentH = 8; // 顶部留白
         if (selectedCategory == null) {
             String prev = null;
             for (Entry e : visible) {
@@ -177,13 +182,25 @@ public class EternalHeartConfigScreen extends Screen {
                     contentH += HEADER_ROW_H;
                     prev = e.category;
                 }
-                contentH += ROW_H;
+                contentH += ROW_STEP;
             }
         } else {
-            contentH = visible.size() * ROW_H;
+            contentH += visible.size() * ROW_STEP;
         }
+        if (showFusionEntryRow()) contentH += ROW_STEP; // 分类顶部的固定入口行
         scroll = 0;
         recalcScroll();
+    }
+
+    /**
+     * 是否显示「饰品融合」分类顶部的固定入口行。
+     *
+     * <p>只在<b>分类视图</b>里出现：搜索模式下一律不插 —— 搜索结果应当只包含真正命中的
+     * 配置项，混进一个固定行会让「搜到几条」对不上。</p>
+     */
+    private boolean showFusionEntryRow() {
+        return selectedCategory != null && lastSearch.isBlank()
+                && selectedCategory.equals(tr("category.fusion"));
     }
 
     /** 滚动边界钳制（每帧调用，廉价） */
@@ -192,7 +209,7 @@ public class EternalHeartConfigScreen extends Screen {
         scrollMax = Math.max(0, contentH - viewH);
         if (scroll > scrollMax) scroll = scrollMax;
         if (scroll < 0) scroll = 0;
-        int listTop = contentTop + 14; // 分类栏小标题占位
+        int listTop = contentTop + 26; // 分类栏小标题占位
         catScrollMax = Math.max(0, (1 + categoryOrder.size()) * CAT_STEP - (contentBot - listTop));
         if (catScroll > catScrollMax) catScroll = catScrollMax;
         if (catScroll < 0) catScroll = 0;
@@ -201,38 +218,36 @@ public class EternalHeartConfigScreen extends Screen {
     // ===================== 渲染 =====================
 
     @Override
-    public void renderBackground(GuiGraphics gui) {
-        // 故意留空——所有背景在 render() 中直接绘制，避免默认背景覆盖自定义面板
-    }
-
-    @Override
     public void render(GuiGraphics g, int mx, int my, float pt) {
         recalcScroll();
 
-        // 1) 全屏遮罩
-        g.fill(0, 0, this.width, this.height, COL_OVERLAY);
-        // 2) 面板框架 + header + 左栏 + footer
-        drawPanelFrame(g);
-        drawHeader(g);
+        // 1) 全屏遮罩 + 面板框架
+        renderBackground(g);
+        drawPanel(g);
+        drawTopBar(g);
         drawSidebar(g, mx, my);
-        // 3) 内容区（scissor 裁剪，平滑滚动不溢出）
+        // 2) 内容区（scissor 裁剪，平滑滚动不溢出）
         g.enableScissor(contentX1, contentTop, contentX2, contentBot);
         renderRows(g, mx, my, pt);
         for (Renderable r : this.renderables) {
             if (rowWidgets.contains(r)) r.render(g, mx, my, pt);
         }
         g.disableScissor();
-        // 4) 滚动条 + footer 状态文字
-        drawScrollbar(g);
-        drawFooter(g);
-        // 5) scissor 外的常驻控件
+        // 3) 滚动条 + footer + 常驻控件
+        drawScrollbar(g, contentTop + 6, contentBot - 6, scroll, scrollMax, contentH);
+        drawFooter(g, mx, my);
         this.searchBox.render(g, mx, my, pt);
         this.closeBtn.render(g, mx, my, pt);
         this.cancelBtn.render(g, mx, my, pt);
-        // 6) 悬浮提示（最后绘制，确保浮在最上层）
+        // 4) 悬浮提示（最后绘制，确保浮在最上层）
         if (hoveredEntry != null) {
             g.renderComponentTooltip(this.font, tooltipFor(hoveredEntry), mx, my);
         }
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics g) {
+        UiTheme.backdrop(g, this.width, this.height);
     }
 
     // ===================== 悬浮提示 =====================
@@ -248,11 +263,11 @@ public class EternalHeartConfigScreen extends Screen {
         String key = entry.fieldName.toLowerCase(Locale.ROOT);
         List<Component> lines = new ArrayList<>();
         lines.add(Component.translatable("config.eternal_heart.field." + key)
-                .withStyle(style -> style.withColor(0xFFE8C860)));
+                .withStyle(style -> style.withColor(UiTheme.ACCENT)));
 
         String descKey = "config.eternal_heart.desc." + key;
-        if (net.minecraft.client.resources.language.I18n.exists(descKey)) {
-            lines.add(Component.translatable(descKey).withStyle(style -> style.withColor(0xFFB9C2CE)));
+        if (I18n.exists(descKey)) {
+            lines.add(Component.translatable(descKey).withStyle(style -> style.withColor(UiTheme.TEXT_DIM)));
         } else {
             // 1.20.1 的 ValueSpec#getComment() 返回单个字符串（多行以 \n 分隔）
             String comment = commentOf(entry.cv);
@@ -264,9 +279,9 @@ public class EternalHeartConfigScreen extends Screen {
                     // → 替换成人话
                     if (line.contains("1.7976931348623157E308")) {
                         lines.add(Component.translatable("config.eternal_heart.range.unlimited")
-                                .withStyle(style -> style.withColor(0xFFB9C2CE)));
+                                .withStyle(style -> style.withColor(UiTheme.TEXT_DIM)));
                     } else {
-                        lines.add(Component.literal(line).withStyle(style -> style.withColor(0xFFB9C2CE)));
+                        lines.add(Component.literal(line).withStyle(style -> style.withColor(UiTheme.TEXT_DIM)));
                     }
                 }
             }
@@ -275,7 +290,7 @@ public class EternalHeartConfigScreen extends Screen {
         lines.add(Component.translatable("config.eternal_heart.tooltip.value",
                         displayValue(entry.fieldName, draft.get(entry.fieldName)),
                         displayValue(entry.fieldName, entry.cv.getDefault()))
-                .withStyle(style -> style.withColor(0xFF8A93A0)));
+                .withStyle(style -> style.withColor(UiTheme.TEXT_MUTED)));
         return lines;
     }
 
@@ -295,74 +310,80 @@ public class EternalHeartConfigScreen extends Screen {
         return String.valueOf(value);
     }
 
-    /** 面板底色、双线边框、header 发光分隔线、footer/侧栏分隔线 */
-    private void drawPanelFrame(GuiGraphics g) {
-        // 主体
-        g.fill(panelX, panelY, panelX + panelW, panelY + panelH, COL_PANEL);
-        // 左栏更深底色
-        g.fill(panelX + 1, contentTop, panelX + CAT_W, contentBot, COL_SIDEBAR);
-        // 外边框（暗金 1px）
-        g.fill(panelX, panelY, panelX + panelW, panelY + 1, COL_BORDER);
-        g.fill(panelX, panelY + panelH - 1, panelX + panelW, panelY + panelH, COL_BORDER);
-        g.fill(panelX, panelY, panelX + 1, panelY + panelH, COL_BORDER);
-        g.fill(panelX + panelW - 1, panelY, panelX + panelW, panelY + panelH, COL_BORDER);
-        // 内衬微光线（双线框效果）
-        g.fill(panelX + 1, panelY + 1, panelX + panelW - 1, panelY + 2, COL_BORDER_IN);
-        g.fill(panelX + 1, panelY + panelH - 2, panelX + panelW - 1, panelY + panelH - 1, COL_BORDER_IN);
-        g.fill(panelX + 1, panelY + 1, panelX + 2, panelY + panelH - 1, COL_BORDER_IN);
-        g.fill(panelX + panelW - 2, panelY + 1, panelX + panelW - 1, panelY + panelH - 1, COL_BORDER_IN);
-        // header 底部中心发光金线
-        drawGlowLine(g, panelX + 2, panelX + panelW - 2, panelY + HEADER_H);
-        // footer 顶部分隔
-        g.fill(panelX + 2, panelY + panelH - FOOTER_H, panelX + panelW - 2,
-                panelY + panelH - FOOTER_H + 1, 0x25FFFFFF);
-        // 侧栏右侧分隔
-        g.fill(panelX + CAT_W, contentTop, panelX + CAT_W + 1, contentBot, 0x25FFFFFF);
-    }
-
     /** 左上标题 + 副标题（搜索框为组件，在 render 末尾统一渲染） */
-    private void drawHeader(GuiGraphics g) {
-        g.drawString(this.font, tr("title"), panelX + 10, panelY + 6, COL_GOLD);
-        g.drawString(this.font, trimToWidth(tr("subtitle"), panelW - searchBox.getWidth() - 30),
-                panelX + 10, panelY + 19, 0xFF7E8896);
+    private void drawTopBar(GuiGraphics g) {
+        int searchLeft = searchBox.getX();
+        int subtitleWidth = Math.max(80, searchLeft - (panelX + 16) - 16);
+        drawHeader(g, Component.translatable("config.eternal_heart.title"),
+                Component.literal(trim(tr("subtitle"), subtitleWidth)), HEADER_H);
     }
 
     /** 左侧分类导航栏（手动绘制，命中检测见 mouseClicked） */
     private void drawSidebar(GuiGraphics g, int mx, int my) {
-        int listTop = contentTop + 14;
-        g.drawString(this.font, tr("categories"), panelX + 10, contentTop + 3, 0xFF6E7887);
+        int listTop = contentTop + 26;
+        // 侧栏底板：比主面板更深一档，形成分区
+        UiTheme.roundRect(g, panelX + 6, contentTop + 6, CAT_W - 12,
+                contentBot - contentTop - 12, 8, UiTheme.PANEL_DEEP);
+        g.drawString(this.font, tr("categories"), panelX + 16, contentTop + 8, UiTheme.TEXT_MUTED);
 
         int total = 1 + categoryOrder.size();
         for (int i = 0; i < total; i++) {
             int iy = listTop - catScroll + i * CAT_STEP;
-            if (iy + CAT_ITEM_H <= contentTop + 13 || iy >= contentBot) continue;
+            if (iy + CAT_ITEM_H <= contentTop + 24 || iy >= contentBot) continue;
             boolean sel;
             if (i == 0) sel = selectedCategory == null;
             else sel = categoryOrder.get(i - 1).equals(selectedCategory);
-            boolean hov = !sel && mx >= panelX + 4 && mx < panelX + CAT_W - 2
+            boolean hov = !sel && mx >= sidebarX1 && mx < sidebarX2
                     && my >= iy && my < iy + CAT_ITEM_H;
+
             if (sel) {
-                g.fill(panelX + 4, iy - 1, panelX + CAT_W - 2, iy + CAT_ITEM_H + 1, 0x35E8C860);
-                g.fill(panelX + 4, iy - 1, panelX + 6, iy + CAT_ITEM_H + 1, COL_GOLD);
+                UiTheme.roundRect(g, sidebarX1, iy, sidebarX2 - sidebarX1, CAT_ITEM_H, 5, UiTheme.ACCENT_SOFT);
+                UiTheme.roundRect(g, sidebarX1 + 2, iy + 6, 3, CAT_ITEM_H - 12, 1, UiTheme.ACCENT);
             } else if (hov) {
-                g.fill(panelX + 4, iy - 1, panelX + CAT_W - 2, iy + CAT_ITEM_H + 1, 0x18FFFFFF);
+                UiTheme.roundRect(g, sidebarX1, iy, sidebarX2 - sidebarX1, CAT_ITEM_H, 5, 0x14FFFFFF);
             }
             String label = i == 0 ? tr("all") : categoryOrder.get(i - 1);
-            g.drawString(this.font, trimToWidth(label, CAT_W - 20), panelX + 11, iy + 4,
-                    sel ? 0xFFFFE9A8 : 0xFFAEB8C4);
+            g.drawString(this.font, trim(label, CAT_W - 34), sidebarX1 + 12, iy + 7,
+                    sel ? UiTheme.ACCENT : (hov ? UiTheme.TEXT : UiTheme.TEXT_DIM));
+        }
+
+        // 分类过多时显示细滚动条
+        if (catScrollMax > 0) {
+            int trackTop = listTop;
+            int trackH = contentBot - listTop;
+            UiTheme.roundRect(g, panelX + CAT_W - 12, trackTop, 3, trackH, 1, UiTheme.TRACK);
+            int thumbH = Math.max(20, trackH * trackH / Math.max(trackH, total * CAT_STEP));
+            int thumbY = trackTop + (trackH - thumbH) * catScroll / Math.max(1, catScrollMax);
+            UiTheme.roundRect(g, panelX + CAT_W - 12, thumbY, 3, thumbH, 1, UiTheme.ACCENT_FAINT);
         }
     }
 
-    /** 内容区主体：分类标题 + 行背景/行名 + 控件布局（在 scissor 内调用） */
+    /** 内容区主体：分类标题 + 卡片式配置行（在 scissor 内调用） */
     private void renderRows(GuiGraphics g, int mx, int my, float pt) {
         // 注意：绝不能在渲染循环里做"每帧清焦点"的全量清理 —— 那会把用户刚点击聚焦的
         // 输入框焦点在下一帧立刻清掉（表现为输入框点不到、无法输入）。
         // 旧行控件的隐藏与焦点清理统一放在 applyFilter()（仅在过滤结果变化时执行一次）。
         boolean showHeaders = selectedCategory == null;
-        int rowIdx = 0;
         String prevCat = null;
-        int y = contentTop - scroll;
+        int y = contentTop - scroll + 8;
         hoveredEntry = null; // 每帧重算
+
+        // 「饰品融合」分类顶部的固定入口（不是配置项，单独画一行并放一个按钮）
+        fusionEntryBtn.visible = false;
+        if (showFusionEntryRow()) {
+            if (y + ROW_H > contentTop && y < contentBot) {
+                boolean hover = mx >= contentX1 && mx < contentX2 && my >= y && my < y + ROW_H;
+                UiTheme.card(g, contentX1, y, contentX2 - contentX1, ROW_H, 7, hover, true);
+                int xr = contentX2 - 10 - fusionEntryBtn.getWidth();
+                fusionEntryBtn.setPosition(xr, y + (ROW_H - fusionEntryBtn.getHeight()) / 2);
+                fusionEntryBtn.visible = true;
+                int nameW = xr - 8 - (contentX1 + 14);
+                g.drawString(this.font, trim(tr("fusion.title"), nameW), contentX1 + 14, y + 6, UiTheme.TEXT);
+                g.drawString(this.font, trim(tr("fusion.row_desc"), nameW), contentX1 + 14, y + 19,
+                        UiTheme.TEXT_MUTED);
+            }
+            y += ROW_STEP;
+        }
 
         for (Entry e : visible) {
             if (showHeaders && !e.category.equals(prevCat)) {
@@ -375,26 +396,29 @@ public class EternalHeartConfigScreen extends Screen {
             e.y = y;
             e.visibleNow = y + ROW_H > contentTop && y < contentBot;
             if (e.visibleNow) {
-                // 行背景：交替底色 + 悬停高亮
                 boolean hover = mx >= contentX1 && mx < contentX2 && my >= y && my < y + ROW_H;
-                if ((rowIdx & 1) == 1) g.fill(contentX1, y, contentX2, y + ROW_H, COL_ROW_ALT);
+                UiTheme.card(g, contentX1, y, contentX2 - contentX1, ROW_H, 7, hover, false);
                 if (hover) {
-                    g.fill(contentX1, y, contentX2, y + ROW_H, COL_ROW_HOVER);
-                    hoveredEntry = e; // 记录悬停行，由 render 末尾绘制悬浮提示
+                    UiTheme.roundRect(g, contentX1 + 3, y + 8, 3, ROW_H - 16, 1, UiTheme.ACCENT);
                 }
-                // 控件布局：从右往左放置（+ 在最右）
-                int xr = contentX2 - 2;
+
+                // 控件布局：从右往左放置（最右侧控件贴边）
+                int xr = contentX2 - 10;
                 for (int i = e.widgets.size() - 1; i >= 0; i--) {
                     AbstractWidget w = e.widgets.get(i);
                     xr -= w.getWidth();
-                    w.setPosition(xr, y + (ROW_H - 18) / 2);
+                    w.setPosition(xr, y + (ROW_H - w.getHeight()) / 2);
                     w.visible = true;
                 }
-                int leftmost = e.widgets.isEmpty() ? contentX2 - 2 : xr;
-                // 行名（超出可用宽度时截断）
-                int nameW = leftmost - 8 - contentX1 - 4;
-                g.drawString(this.font, trimToWidth(e.name, nameW),
-                        contentX1 + 4, y + 8, COL_TEXT);
+                // 只在「名称 / 说明」区域显示悬浮提示，避免盖住右侧控件
+                if (hover && mx < xr - 4) hoveredEntry = e;
+                int leftmost = e.widgets.isEmpty() ? contentX2 - 10 : xr;
+                int nameW = leftmost - 8 - (contentX1 + 14);
+                g.drawString(this.font, trim(e.name, nameW), contentX1 + 14, y + 6, UiTheme.TEXT);
+                if (!e.description.isBlank()) {
+                    g.drawString(this.font, trim(e.description, nameW), contentX1 + 14, y + 19,
+                            UiTheme.TEXT_MUTED);
+                }
             } else {
                 // 滚出视口的行：隐藏控件并清理焦点（不影响视口内正在编辑的输入框）
                 for (AbstractWidget w : e.widgets) {
@@ -402,73 +426,34 @@ public class EternalHeartConfigScreen extends Screen {
                     w.setFocused(false);
                 }
             }
-            y += ROW_H;
-            rowIdx++;
+            y += ROW_STEP;
         }
 
         if (visible.isEmpty()) {
-            g.drawCenteredString(this.font, tr("no_results"),
-                    (contentX1 + contentX2) / 2, (contentTop + contentBot) / 2 - 4, COL_TEXT_DIM);
+            drawEmpty(g, tr("no_results"), contentX1, contentTop, contentX2, contentBot);
         }
     }
 
-    /** 分类标题行：金色标题 + 右侧渐隐装饰线 */
+    /** 分类标题行：青绿小标题 + 右侧渐隐装饰线 */
     private void drawCategoryHeader(GuiGraphics g, String cat, int y) {
-        String label = "◆ " + cat;
-        g.drawString(this.font, label, contentX1 + 4, y + 7, COL_GOLD);
-        int tx = contentX1 + 8 + this.font.width(label);
-        drawGradientH(g, tx, contentX2, y + 11, 0x70E8C860, 0x06E8C860);
+        int textY = y + 10;
+        g.drawString(this.font, cat, contentX1 + 4, textY, UiTheme.ACCENT_DIM);
+        int tx = contentX1 + 12 + this.font.width(cat);
+        UiTheme.hGradient(g, tx, contentX2 - 8, y + 14, 0x505EEAD4, 0x005EEAD4);
     }
 
-    /** 右侧滚动条（金色拇指） */
-    private void drawScrollbar(GuiGraphics g) {
-        if (scrollMax <= 0) return;
-        int trackH = contentBot - contentTop;
-        int thumbH = Math.max(14, (int) ((long) trackH * trackH / Math.max(1, contentH)));
-        int thumbY = contentTop + (trackH - thumbH) * scroll / Math.max(1, scrollMax);
-        int tx = panelX + panelW - 5;
-        g.fill(tx, contentTop, tx + 3, contentBot, 0x20FFFFFF);
-        g.fill(tx, thumbY, tx + 3, thumbY + thumbH, 0x90E8C860);
-    }
-
-    /** footer 动态状态文字 */
-    private void drawFooter(GuiGraphics g) {
+    /** footer：状态文字（按钮为组件，在 render 末尾统一渲染） */
+    private void drawFooter(GuiGraphics g, int mx, int my) {
+        drawFooterDivider(g, FOOTER_H);
         String status = statusKey.isEmpty() ? tr("count", visible.size()) : tr("status." + statusKey);
-        g.drawString(this.font, trimToWidth(status, panelW - 184),
-                panelX + 10, panelY + panelH - FOOTER_H + 9, COL_TEXT_DIM);
-    }
-
-    // ===================== 渐变绘制辅助 =====================
-
-    /** 中心发光水平线：中间亮金、两端渐隐 */
-    private void drawGlowLine(GuiGraphics g, int x1, int x2, int y) {
-        int mid = (x1 + x2) / 2;
-        drawGradientH(g, x1, mid, y, 0x00E8C860, 0xE0E8C860);
-        drawGradientH(g, mid, x2, y, 0xE0E8C860, 0x00E8C860);
-    }
-
-    /** 水平渐变线（分段 fill 模拟） */
-    private void drawGradientH(GuiGraphics g, int x1, int x2, int y, int ca, int cb) {
-        if (x2 <= x1) return;
-        int seg = Math.max(1, (x2 - x1) / 3);
-        for (int x = x1; x < x2; x += seg) {
-            float t = (x - x1) / (float) (x2 - x1);
-            g.fill(x, y, Math.min(x + seg, x2), y + 1, lerpColor(ca, cb, t));
-        }
-    }
-
-    private static int lerpColor(int a, int b, float t) {
-        int aA = (a >>> 24) & 0xFF, aR = (a >>> 16) & 0xFF, aG = (a >>> 8) & 0xFF, aB = a & 0xFF;
-        int bA = (b >>> 24) & 0xFF, bR = (b >>> 16) & 0xFF, bG = (b >>> 8) & 0xFF, bB = b & 0xFF;
-        return ((int) (aA + (bA - aA) * t) << 24) | ((int) (aR + (bR - aR) * t) << 16)
-                | ((int) (aG + (bG - aG) * t) << 8) | (int) (aB + (bB - aB) * t);
-    }
-
-    /** 文字超宽截断（追加省略号） */
-    private String trimToWidth(String s, int w) {
-        if (w <= 0) return "";
-        if (this.font.width(s) <= w) return s;
-        return this.font.plainSubstrByWidth(s, Math.max(0, w - 6)) + "…";
+        int statusY = panelY + panelH - FOOTER_H + 15;
+        int color = switch (statusKey) {
+            case "" -> UiTheme.TEXT_MUTED;
+            case "draft", "saving", "opened", "sync", "saved" -> UiTheme.ACCENT_DIM;
+            case "invalid", "save_failed", "timeout", "conflict", "forbidden" -> UiTheme.WARN;
+            default -> UiTheme.TEXT_DIM;
+        };
+        g.drawString(this.font, trim(status, panelW - 260), panelX + 16, statusY, color);
     }
 
     // ===================== 输入处理 =====================
@@ -477,8 +462,8 @@ public class EternalHeartConfigScreen extends Screen {
     public boolean mouseClicked(double mxd, double myd, int button) {
         int mx = (int) mxd, my = (int) myd;
         // 左侧分类栏命中检测
-        int listTop = contentTop + 14;
-        if (button == 0 && mx >= panelX + 4 && mx < panelX + CAT_W - 2
+        int listTop = contentTop + 26;
+        if (button == 0 && mx >= sidebarX1 && mx < sidebarX2
                 && my >= listTop && my < contentBot) {
             int rel = my - listTop + catScroll;
             int idx = rel / CAT_STEP;
@@ -497,6 +482,15 @@ public class EternalHeartConfigScreen extends Screen {
                 return true;
             }
         }
+        // 「饰品融合」分类顶部的入口行：点整行也能打开开关界面
+        if (button == 0 && showFusionEntryRow()
+                && mx >= contentX1 && mx < contentX2 && my >= contentTop && my < contentBot) {
+            int rowY = contentTop - scroll + 8;
+            if (my >= rowY && my < rowY + ROW_H) {
+                Minecraft.getInstance().setScreen(new FusionToggleScreen(this));
+                return true;
+            }
+        }
         return super.mouseClicked(mxd, myd, button);
     }
 
@@ -506,7 +500,7 @@ public class EternalHeartConfigScreen extends Screen {
         if (mx >= panelX && mx < panelX + CAT_W && my >= contentTop && my < contentBot) {
             catScroll = (int) Math.max(0, Math.min(catScrollMax, catScroll - delta * CAT_STEP));
         } else {
-            scroll = (int) Math.max(0, Math.min(scrollMax, scroll - delta * ROW_H));
+            scroll = (int) Math.max(0, Math.min(scrollMax, scroll - delta * ROW_STEP));
         }
         return true;
     }
@@ -597,6 +591,7 @@ public class EternalHeartConfigScreen extends Screen {
         if (entries.stream().anyMatch(e -> e.invalid)) { statusKey = "invalid"; return; }
         Map<String, Object> patch = changes();
         if (patch.isEmpty()) { super.onClose(); return; }
+
         saving = true;
         savingTicks = 0;
         statusKey = "saving";
@@ -604,7 +599,9 @@ public class EternalHeartConfigScreen extends Screen {
     }
 
     @Override
-    public boolean isPauseScreen() { return false; }
+    public boolean isPauseScreen() {
+        return false;
+    }
 
     /**
      * 打开列表配置的可视化编辑器。
@@ -627,6 +624,8 @@ public class EternalHeartConfigScreen extends Screen {
             // 点一次「完成」就会把内容改坏，必须走通用文本编辑器
             // 配方：默认走图形化编辑器（点格子选物品），内部可切到文本模式
             case "CUSTOM_RECIPES" -> new RecipeEditorScreen(this, initial, onChange);
+            // 自定义仪式配方：图形化编辑器（暗黑祭坛：激活物 + 产出 + 基座材料）
+            case "CUSTOM_RITUALS" -> new RitualEditorScreen(this, initial, onChange);
             default -> new EffectListScreen(this, fieldName, initial, onChange);
         });
     }
@@ -668,16 +667,35 @@ public class EternalHeartConfigScreen extends Screen {
         return com.eternal_heart.core.Numbers.format(value);
     }
 
+    /** 卡片副标题：优先本地化说明键，其次取配置注释里第一行有意义的文字。 */
+    private static String describe(ForgeConfigSpec.ConfigValue<?> cv, String fieldName) {
+        if (fieldName == null) return "";
+        String descKey = "config.eternal_heart.desc." + fieldName.toLowerCase(Locale.ROOT);
+        if (I18n.exists(descKey)) return I18n.get(descKey);
+        String comment = commentOf(cv);
+        if (comment == null) return "";
+        for (String line : comment.split("\n")) {
+            String text = line.trim();
+            if (text.isEmpty()) continue;
+            if (text.startsWith("Range:")) continue;
+            if (text.contains("1.7976931348623157E308")) continue;
+            return text;
+        }
+        return "";
+    }
+
     static class Entry {
         final EternalHeartConfigScreen screen;
         final String fieldName;
         final String name;
+        final String description;
         final String category;
         final String searchKey;
         final ForgeConfigSpec.ConfigValue<?> cv;
         final List<AbstractWidget> widgets = new ArrayList<>();
-        EditBox box;
-        Button button;
+        UiEditBox box;
+        UiButton button;
+        UiSwitch toggle;
         boolean invalid;
         boolean listEntry;
         boolean boxUpdating;
@@ -690,32 +708,40 @@ public class EternalHeartConfigScreen extends Screen {
             this.cv = cv;
             this.fieldName = fieldName;
             this.name = name;
+            this.description = describe(cv, fieldName);
             this.category = category;
-            this.searchKey = (category + ' ' + name + ' ' + fieldName + ' ' + tomlKey).toLowerCase(Locale.ROOT);
+            this.searchKey = (category + ' ' + name + ' ' + description + ' ' + fieldName + ' ' + tomlKey)
+                    .toLowerCase(Locale.ROOT);
             Object value = screen.draft.get(fieldName);
             if (value instanceof List<?>) {
                 // 列表配置：行内按钮显示当前项数，点击进入可视化选择器
                 listEntry = true;
-                button = Button.builder(buttonText(), btn -> screen.openListEditor(fieldName))
-                        .bounds(0, 0, 96, 18).build();
+                button = UiButton.secondary(0, 0, 108, 20, buttonText(),
+                        () -> screen.openListEditor(fieldName));
                 widgets.add(button);
-            } else if (value instanceof Boolean || value instanceof Enum<?>) {
-                button = Button.builder(buttonText(), btn -> {
+            } else if (value instanceof Boolean) {
+                toggle = new UiSwitch(0, 0,
+                        () -> Boolean.TRUE.equals(screen.draft.get(fieldName)),
+                        next -> {
+                            ConfigValues.validate(fieldName, next);
+                            screen.draft.put(fieldName, next);
+                            screen.statusKey = "draft";
+                        });
+                widgets.add(toggle);
+            } else if (value instanceof Enum<?>) {
+                button = UiButton.secondary(0, 0, 108, 20, buttonText(), () -> {
                     Object current = screen.draft.get(fieldName);
-                    Object next;
-                    if (current instanceof Boolean on) next = !on;
-                    else {
-                        Object[] constants = current.getClass().getEnumConstants();
-                        next = constants[(((Enum<?>) current).ordinal() + 1) % constants.length];
-                    }
+                    Object[] constants = current.getClass().getEnumConstants();
+                    Object next = constants[(((Enum<?>) current).ordinal() + 1) % constants.length];
                     ConfigValues.validate(fieldName, next);
                     screen.draft.put(fieldName, next);
-                    btn.setMessage(buttonText());
+                    button.setMessage(buttonText());
                     screen.statusKey = "draft";
-                }).bounds(0, 0, value instanceof Boolean ? 60 : 96, 18).build();
+                });
                 widgets.add(button);
             } else if (value instanceof Number number) {
-                box = new NumberEditBox(Minecraft.getInstance().font, 0, 0, NUM_BOX_W, 18, Component.literal(name));
+                box = new UiEditBox(Minecraft.getInstance().font, 0, 0, NUM_BOX_W, 20, Component.literal(name))
+                        .selectAllOnFocus();
                 box.setMaxLength(48);
                 // 允许科学计数法与符号中间态：Numbers.format 对极大值输出 1.798E308 这类紧凑写法，
                 // 旧过滤器只认数字与小数点 → setValue 被拒绝 → 输入框显示为空（数值很高的配置项都会中招）
@@ -729,11 +755,11 @@ public class EternalHeartConfigScreen extends Screen {
                         screen.draft.put(fieldName, parsed);
                         invalid = false;
                         screen.statusKey = "draft";
-                        box.setTextColor(0xFFE6EAF0);
+                        box.setTextColor(UiTheme.TEXT);
                     } catch (IllegalArgumentException e) {
                         invalid = true;
                         screen.statusKey = "invalid";
-                        box.setTextColor(0xFFFF7777);
+                        box.setTextColor(UiTheme.DANGER);
                     }
                 });
                 widgets.add(box);
@@ -742,14 +768,17 @@ public class EternalHeartConfigScreen extends Screen {
 
         Component buttonText() {
             Object value = screen.draft.get(fieldName);
-            if (value instanceof Boolean on) return Component.translatable("config.eternal_heart." + (on ? "on" : "off"));
+            if (value instanceof Boolean on)
+                return Component.translatable("config.eternal_heart." + (on ? "on" : "off"));
             // 列表类（黑白名单）：按钮文字显示当前项数
             if (value instanceof List<?> list)
                 return Component.translatable("config.eternal_heart.effect_list.open", list.size());
             return Component.literal(flightModeName(value));
         }
 
-        boolean matches(String query) { return searchKey.contains(query); }
+        boolean matches(String query) {
+            return searchKey.contains(query);
+        }
 
         void syncBoxFromValue() {
             if (box == null || box.isFocused() || invalid) return;
@@ -764,22 +793,4 @@ public class EternalHeartConfigScreen extends Screen {
         }
     }
 
-    /** 数值输入框：首次点击聚焦时自动全选内容，直接键入即可覆盖旧值（再次点击可正常定位光标）。 */
-    static class NumberEditBox extends EditBox {
-        NumberEditBox(Font font, int x, int y, int w, int h, Component msg) {
-            super(font, x, y, w, h, msg);
-        }
-
-        @Override
-        public boolean mouseClicked(double mx, double my, int button) {
-            boolean wasFocused = this.isFocused();
-            boolean handled = super.mouseClicked(mx, my, button);
-            if (handled && !wasFocused) {
-                // 刚获得焦点 → 全选内容，方便直接输入覆盖旧值
-                this.setCursorPosition(this.getValue().length());
-                this.setHighlightPos(0);
-            }
-            return handled;
-        }
-    }
 }

@@ -53,23 +53,46 @@ public final class EquipTracker {
         int missingTicks;
     }
 
+    /** Curios 槽位查询结果：区分「确实佩戴 / 确实未佩戴 / 数据不可用」。 */
+    private enum Presence { EQUIPPED, ABSENT, UNKNOWN }
+
     /**
-     * 实时查询 Curios 饰品栏（无缓存、无防抖）。仅跟踪器内部与配置重载等特殊场景使用。
-     *
-     * <p><b>关键：区分「未佩戴」与「数据不可用」</b>。</p>
+     * 区分「确实佩戴 / 确实未佩戴 / 数据不可用」的底层查询。
      *
      * <p>{@code getCuriosInventory} 返回空表示 Curios 能力当前读不到（切换物品、维度切换、
      * 死亡重生、能力重建等时刻都可能短暂出现），而不是玩家摘下了饰品。
-     * 历史实现把这两种情况都判为「未佩戴」，于是换物品/同步间隙会被当成摘饰品，
-     * 触发卸载清理（回收飞行、停掉内置滑翔，表现为「一切换物品飞行就被重置」）。</p>
+     * 因此必须把「数据不可用」与「未佩戴」区分开，避免把同步间隙误判为摘饰品，
+     * 也避免反过来把「读不到」当成「已佩戴」而误授予能力。</p>
+     */
+    private static Presence presence(Player player) {
+        var handler = CuriosApi.getCuriosInventory(player).resolve();
+        if (handler.isEmpty()) return Presence.UNKNOWN;
+        return handler.get().findFirstCurio(EternalHeartMod.ETERNAL_HEART.get()).isPresent()
+                ? Presence.EQUIPPED : Presence.ABSENT;
+    }
+
+    /**
+     * 实时查询 Curios 饰品栏（无缓存、无防抖），对「数据不可用」<b>保守判定为已佩戴</b>。
+     * 仅用于「宁可当作已佩戴」的场景（如死亡归还防重复）。
      *
-     * <p>因此这里对「数据不可用」采取保守判定：视为仍然佩戴；只有
-     * <b>Curios 数据可读且确实找不到饰品</b> 时才返回 false。</p>
+     * <p>历史实现把「数据不可用」与「未佩戴」都判为 false，于是换物品/同步间隙会被当成
+     * 摘饰品，触发卸载清理（回收飞行、停掉内置滑翔，表现为「一切换物品飞行就被重置」）。
+     * 因此这里对「数据不可用」视为仍然佩戴；只有 <b>Curios 数据可读且确实找不到饰品</b>
+     * 时才返回 false。</p>
      */
     public static boolean query(Player player) {
-        var handler = CuriosApi.getCuriosInventory(player).resolve();
-        if (handler.isEmpty()) return true; // 数据不可用 ≠ 未佩戴：保持现状，避免误触发卸载清理
-        return handler.get().findFirstCurio(EternalHeartMod.ETERNAL_HEART.get()).isPresent();
+        return presence(player) != Presence.ABSENT; // 数据不可用 ≠ 未佩戴：保持现状，避免误触发卸载清理
+    }
+
+    /**
+     * 实时查询 Curios 饰品栏（严格）：只有 <b>Curios 数据可读且确实找到饰品</b> 时才返回 true，
+     * 数据不可用时返回 false。
+     *
+     * <p>用于「绝不能误加」的场景：属性修饰符重建、永怒效果刷新等。这些操作一旦误判为已佩戴，
+     * 就会给未佩戴的玩家凭空加上属性 / 效果（历史 Bug：新建存档死亡重生后「属性变成设置的」）。</p>
+     */
+    public static boolean queryDefinite(Player player) {
+        return presence(player) == Presence.EQUIPPED;
     }
 
     /**
@@ -81,23 +104,32 @@ public final class EquipTracker {
      */
     public static boolean serverTick(Player player) {
         State state = STATES.compute(player.getUUID(), State::new);
-        boolean present = query(player);
 
-        if (present) {
-            state.missingTicks = 0;
-            if (!state.equipped) {
-                state.equipped = true;
-                FeatureManager.dispatchEquip(player);
+        switch (presence(player)) {
+            case EQUIPPED -> {
+                state.missingTicks = 0;
+                if (!state.equipped) {
+                    state.equipped = true;
+                    FeatureManager.dispatchEquip(player);
+                }
             }
-        } else if (state.equipped && ++state.missingTicks >= UNEQUIP_CONFIRM_TICKS) {
-            // 卸下边沿：连续多次查不到才确认真卸下。
-            // 防止维度切换 / 重生 / 数据同步间隙的瞬时误判触发卸载清理
-            //（历史问题：飞行中途被误清理导致「飞一小段就掉下来」）。
-            state.equipped = false;
-            state.missingTicks = 0;
-            LOGGER.debug("[永恒之心] {} 判定为已卸下（连续 {} tick 未检测到饰品），执行卸载清理",
-                    player.getName().getString(), UNEQUIP_CONFIRM_TICKS);
-            FeatureManager.dispatchUnequip(player);
+            case ABSENT -> {
+                if (state.equipped && ++state.missingTicks >= UNEQUIP_CONFIRM_TICKS) {
+                    // 卸下边沿：连续多次查不到才确认真卸下。
+                    // 防止维度切换 / 重生 / 数据同步间隙的瞬时误判触发卸载清理
+                    //（历史问题：飞行中途被误清理导致「飞一小段就掉下来」）。
+                    state.equipped = false;
+                    state.missingTicks = 0;
+                    LOGGER.debug("[永恒之心] {} 判定为已卸下（连续 {} tick 未检测到饰品），执行卸载清理",
+                            player.getName().getString(), UNEQUIP_CONFIRM_TICKS);
+                    FeatureManager.dispatchUnequip(player);
+                }
+            }
+            case UNKNOWN -> {
+                // 数据不可用：保持当前判定，既不建立「佩戴」边沿，也不推进卸下计时。
+                // 这是「新建存档死亡重生后未佩戴玩家凭空获得飞行 / 属性」的根因修复：
+                // 旧实现把「读不到」当作「已佩戴」，会对未佩戴玩家误触发 dispatchEquip。
+            }
         }
         return state.equipped;
     }
@@ -111,16 +143,21 @@ public final class EquipTracker {
      */
     public static boolean clientTick(Player player) {
         State state = STATES.compute(player.getUUID(), State::new);
-        if (state.equipped) {
-            if (query(player)) {
-                state.missingTicks = 0;
-            } else if (++state.missingTicks >= UNEQUIP_CONFIRM_TICKS) {
-                state.equipped = false;
+
+        switch (presence(player)) {
+            case EQUIPPED -> {
+                state.equipped = true;
                 state.missingTicks = 0;
             }
-        } else if (query(player)) {
-            state.equipped = true;
-            state.missingTicks = 0;
+            case ABSENT -> {
+                if (state.equipped && ++state.missingTicks >= UNEQUIP_CONFIRM_TICKS) {
+                    state.equipped = false;
+                    state.missingTicks = 0;
+                }
+            }
+            case UNKNOWN -> {
+                // 数据不可用：保持当前判定（表现层同样不能被同步间隙的瞬时误判中断）。
+            }
         }
         return state.equipped;
     }
@@ -130,13 +167,14 @@ public final class EquipTracker {
      *
      * <p>两端都读取由 tick 维护的防抖缓存（客户端见 {@link #clientTick}，
      * 服务端见 {@link #serverTick}）；若从未 tick 过（例如登录瞬间而事件先于 tick 到达），
-     * 补做一次实时查询并建立缓存。</p>
+     * 补做一次<b>严格</b>实时查询建立缓存：数据不可用时按「未佩戴」处理，
+     * 避免对未佩戴玩家误判定而授予能力。</p>
      */
     public static boolean isEquipped(Player player) {
         State state = STATES.get(player.getUUID());
         if (state == null) {
             state = new State();
-            state.equipped = query(player);
+            state.equipped = queryDefinite(player);
             STATES.put(player.getUUID(), state);
         }
         return state.equipped;

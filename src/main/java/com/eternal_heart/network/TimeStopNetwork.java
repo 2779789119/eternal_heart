@@ -26,7 +26,7 @@ import java.util.function.Supplier;
  * 时停的网络通道。
  *
  * <ul>
- *   <li>{@link Request}（C→S）：快捷键触发的发动请求，结果用动作栏消息反馈；</li>
+ *   <li>{@link Request}（C→S）：快捷键触发的切换请求（发动 / 关闭），结果用动作栏消息反馈；</li>
  *   <li>{@link Sync}（S→C）：把时停状态同步给客户端 —— 客户端必须自己也知道时停，
  *       否则弹射物会在本地继续飞行（位置虽由服务端包驱动，但实体 tick 在客户端也会跑）。</li>
  * </ul>
@@ -75,7 +75,8 @@ public final class TimeStopNetwork {
     private static void handleRequest(Request msg, Supplier<NetworkEvent.Context> context) {
         ServerPlayer player = context.get().getSender();
         if (player != null) {
-            Component failure = TimeStop.start(player);
+            // 切换语义：正在时停就关闭，否则发动（判定顺序见 TimeStop.toggle）
+            Component failure = TimeStop.toggle(player);
             if (failure != null) player.displayClientMessage(failure, true);
         }
         context.get().setPacketHandled(true);

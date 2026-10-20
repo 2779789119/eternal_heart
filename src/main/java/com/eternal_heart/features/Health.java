@@ -9,8 +9,9 @@ import net.minecraft.world.entity.player.Player;
  * 语义即"持续掉血 / 击杀扣血 / 吸血变失血"。</p>
  *
  * <p>为什么需要这个入口：负治疗无法走原版 {@code heal()}（它会直接把血量推到上限），
- * 只能走 {@code setHealth}；而旁路改血会被防护机制的生命审计判定为「被改血」并回滚，
- * 表现为"填了负数却没反应"。因此负值路径在这里主动告知审计层：
+ * 只能走 {@code setHealth}；而旁路改血会被防护机制的硬锁 / 审计判定为「被改血」并拒绝或回滚，
+ * 表现为"填了负数却没反应"。因此负值路径统一走
+ * {@link AegisSystem#applyOwnedHealth} —— 它会在写入瞬间放行并同步审计基线：
  * <b>这次变化是本模组按配置施加的，合法</b>。</p>
  */
 public final class Health {
@@ -25,7 +26,6 @@ public final class Health {
             player.heal(amount);
             return;
         }
-        player.setHealth(Math.max(0f, player.getHealth() + amount));
-        AegisSystem.acceptHealthChange(player);
+        AegisSystem.applyOwnedHealth(player, Math.max(0f, player.getHealth() + amount));
     }
 }

@@ -3,6 +3,7 @@ package com.eternal_heart.features;
 import com.eternal_heart.EternalHeartConfig;
 import com.eternal_heart.EternalHeartMod;
 import com.eternal_heart.config.ConfigValues;
+import com.eternal_heart.integration.Integrations;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket;
@@ -45,7 +46,10 @@ public final class CustomRecipes {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     /** 自定义配方的 ID 命名空间前缀（与数据包配方不会冲突）。 */
-    private static final String ID_PREFIX = "eternal_heart_custom_";
+    private static final String RECIPE_PREFIX = "eternal_heart_custom_";
+
+    /** 自定义仪式配方的 ID 前缀（与普通自定义配方区分）。 */
+    private static final String RITUAL_PREFIX = "eternal_heart_ritual_";
 
     private CustomRecipes() {
     }
@@ -67,23 +71,36 @@ public final class CustomRecipes {
 
         List<? extends String> definitions = ConfigValues.get(EternalHeartConfig.CUSTOM_RECIPES);
         for (int index = 0; index < definitions.size(); index++) {
-            Recipe<?> recipe = parse(index, definitions.get(index));
+            Recipe<?> recipe = parse(index, RECIPE_PREFIX, definitions.get(index));
             if (recipe != null) recipes.add(recipe);
+        }
+
+        // 自定义仪式配方（Goety 软依赖）：未安装诡厄巫法时整批跳过，避免逐条解析报错刷屏
+        List<? extends String> rituals = ConfigValues.get(EternalHeartConfig.CUSTOM_RITUALS);
+        if (!rituals.isEmpty()) {
+            if (Integrations.isGoetyLoaded()) {
+                for (int index = 0; index < rituals.size(); index++) {
+                    Recipe<?> recipe = parse(index, RITUAL_PREFIX, rituals.get(index));
+                    if (recipe != null) recipes.add(recipe);
+                }
+            } else {
+                LOGGER.warn("[永恒之心] 配置了 {} 条自定义仪式配方，但未安装诡厄巫法（Goety），已忽略", rituals.size());
+            }
         }
 
         int added = recipes.size() - before;
         manager.replaceRecipes(recipes);
         broadcast(server, recipes);
-        LOGGER.info("[永恒之心] 自定义配方注入完成：配置 {} 条，成功 {} 条，配方表共 {} 条",
-                definitions.size(), added, recipes.size());
+        LOGGER.info("[永恒之心] 自定义配方注入完成：配方 {} 条、仪式 {} 条，成功新增 {} 条，配方表共 {} 条",
+                definitions.size(), rituals.size(), added, recipes.size());
         return added;
     }
 
-    /** 是否为本模组注入的自定义配方（按 ID 前缀识别）。 */
+    /** 是否为本模组注入的自定义配方 / 仪式（按 ID 前缀识别）。 */
     private static boolean isOwned(Recipe<?> recipe) {
         ResourceLocation id = recipe.getId();
         return id.getNamespace().equals(EternalHeartMod.MODID)
-                && id.getPath().startsWith(ID_PREFIX);
+                && (id.getPath().startsWith(RECIPE_PREFIX) || id.getPath().startsWith(RITUAL_PREFIX));
     }
 
     /**
@@ -95,14 +112,14 @@ public final class CustomRecipes {
      * <p>解析失败只记录日志并跳过 —— 一条写错不应该拖垮整份配置，
      * 更不该让服务器起不来。</p>
      */
-    private static Recipe<?> parse(int index, String definition) {
+    private static Recipe<?> parse(int index, String prefix, String definition) {
         try {
             JsonObject object = RecipeText.parse(definition);
             if (object == null) {
                 LOGGER.warn("[永恒之心] 自定义配方 #{} 无法识别，已忽略（写法见配置注释）：{}", index, definition);
                 return null;
             }
-            return RecipeManager.fromJson(EternalHeartMod.id(ID_PREFIX + index), object);
+            return RecipeManager.fromJson(EternalHeartMod.id(prefix + index), object);
         } catch (RuntimeException e) {
             LOGGER.warn("[永恒之心] 自定义配方 #{} 解析失败，已忽略：{}", index, e.toString());
             return null;

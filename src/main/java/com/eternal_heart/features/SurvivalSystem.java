@@ -24,6 +24,7 @@ import net.minecraft.world.item.ProjectileWeaponItem;
 import net.minecraft.world.item.alchemy.PotionUtils;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.event.entity.living.LivingEvent.LivingTickEvent;
 
 import java.util.List;
@@ -76,8 +77,11 @@ public class SurvivalSystem implements IFeature {
         applyTickRegen(player);
         applyPassiveEffects(player, tick);
         applyVoidRescue(player);
+        applyAirSupplyLock(player);
+        applyHungerLock(player);
         if (Ticker.due(player.getUUID(), tick, 20)) applyAutoPotion(player);
         applyAutoExtinguish(player);
+        applyDurabilityRefill(player, tick);
     }
 
     @Override
@@ -103,13 +107,16 @@ public class SurvivalSystem implements IFeature {
      * 既能在被其它模组清掉后 1 tick 内恢复，也避免夜视等效果的淡出闪烁。
      */
     private static void applyPassiveEffects(Player player, long tick) {
-        final int duration = 1200;
+        // 无限时长（原版 -1 语义）：效果永不到期，也不再需要周期性刷新
+        final int duration = ConfigValues.get(EternalHeartConfig.PASSIVE_EFFECT_INFINITE) ? -1 : 1200;
         final int refreshBelow = 600;
 
         OwnedEffects.maintain(player, MobEffects.NIGHT_VISION,
-                ConfigValues.get(EternalHeartConfig.NIGHT_VISION), duration, 0, refreshBelow);
+                ConfigValues.get(EternalHeartConfig.NIGHT_VISION), duration,
+                ConfigValues.get(EternalHeartConfig.NIGHT_VISION_LEVEL), refreshBelow);
         OwnedEffects.maintain(player, MobEffects.WATER_BREATHING,
-                ConfigValues.get(EternalHeartConfig.WATER_BREATHING), duration, 0, refreshBelow);
+                ConfigValues.get(EternalHeartConfig.WATER_BREATHING), duration,
+                ConfigValues.get(EternalHeartConfig.WATER_BREATHING_LEVEL), refreshBelow);
 
         int haste = ConfigValues.get(EternalHeartConfig.HASTE_LEVEL);
         OwnedEffects.maintain(player, MobEffects.DIG_SPEED, haste > 0, duration, Math.max(0, haste - 1), refreshBelow);
@@ -122,9 +129,26 @@ public class SurvivalSystem implements IFeature {
                 passiveFire ? duration : 20, 0, passiveFire ? refreshBelow : 5);
 
         OwnedEffects.maintain(player, MobEffects.SATURATION,
-                ConfigValues.get(EternalHeartConfig.SATURATION), duration, 0, refreshBelow);
+                ConfigValues.get(EternalHeartConfig.SATURATION), duration,
+                ConfigValues.get(EternalHeartConfig.SATURATION_LEVEL), refreshBelow);
         OwnedEffects.maintain(player, MobEffects.LUCK,
-                ConfigValues.get(EternalHeartConfig.PERMANENT_LUCK), duration, 0, refreshBelow);
+                ConfigValues.get(EternalHeartConfig.PERMANENT_LUCK), duration,
+                ConfigValues.get(EternalHeartConfig.PERMANENT_LUCK_LEVEL), refreshBelow);
+    }
+
+    /** 氧气锁定：直接把氧气值钉在满值（不依赖水下呼吸效果，被清效果也不影响）。 */
+    private static void applyAirSupplyLock(Player player) {
+        if (!ConfigValues.get(EternalHeartConfig.AIR_SUPPLY_LOCK)) return;
+        int max = player.getMaxAirSupply();
+        if (player.getAirSupply() < max) player.setAirSupply(max);
+    }
+
+    /** 饥饿锁定：饥饿值与饱食度都不再下降（饥饿值满即不触发自然回血扣饱食）。 */
+    private static void applyHungerLock(Player player) {
+        if (!ConfigValues.get(EternalHeartConfig.HUNGER_LOCK)) return;
+        var food = player.getFoodData();
+        if (food.getFoodLevel() < 20) food.setFoodLevel(20);
+        if (food.getSaturationLevel() < 5f) food.setSaturation(5f);
     }
 
     /** 虚空救援：跌出世界底部时送回建筑上限高度（阈值基于世界实际最低高度）。 */
@@ -157,9 +181,13 @@ public class SurvivalSystem implements IFeature {
 
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             ItemStack stack = inventory.getItem(slot);
-            if (!(stack.getItem() instanceof PotionItem)) continue;
+            if (stack.isEmpty()) continue;
 
+            // 判据从「物品类型是普通药水」放宽为「物品带有药水效果」：
+            // 喷溅 / 滞留 / 模组药水（以及把效果写在 NBT 上的自定义药水）都能被自动使用
             List<MobEffectInstance> effects = PotionUtils.getMobEffects(stack);
+            if (effects.isEmpty() && !(stack.getItem() instanceof PotionItem)) continue;
+
             if (hasPriorityEffect(effects)) {
                 drinkPotion(player, slot, stack, effects);
                 return;
@@ -185,7 +213,10 @@ public class SurvivalSystem implements IFeature {
         for (MobEffectInstance effect : effects) {
             player.addEffect(new MobEffectInstance(effect));
         }
+        boolean potionBottle = stack.getItem() instanceof PotionItem;
         stack.shrink(1);
+        // 只有普通瓶装药水会留下玻璃瓶；喷溅 / 滞留 / 模组药水不凭空造瓶子
+        if (!potionBottle) return;
 
         ItemStack bottle = new ItemStack(Items.GLASS_BOTTLE);
         if (stack.isEmpty()) {
@@ -200,6 +231,61 @@ public class SurvivalSystem implements IFeature {
     private static void applyAutoExtinguish(Player player) {
         if (!ConfigValues.get(EternalHeartConfig.AUTO_EXTINGUISH)) return;
         if (player.isOnFire()) player.clearFire();
+    }
+
+    // ============================================================
+    //  耐久补满
+    // ============================================================
+
+    /**
+     * 耐久补满：按固定周期把背包里已损耗的耐久直接补回满值。
+     *
+     * <p>与「工具不掉耐久」互补：那个开关只阻止<b>新</b>损耗，佩戴之前已经磨掉的耐久
+     * 不会自己回来；这里负责把历史损耗补满，两者可独立开关。</p>
+     *
+     * <p>遍历 {@code Inventory#getContainerSize()}（主背包 + 盔甲 + 副手，共 41 格），
+     * 因此手上工具、盔甲、副手盾牌都在覆盖范围内。只处理「有耐久且已损耗」的物品，
+     * 未损耗 / 无耐久物品零开销跳过；Curios 饰品栏不在其中。</p>
+     */
+    private static void applyDurabilityRefill(Player player, long tick) {
+        if (!ConfigValues.get(EternalHeartConfig.DURABILITY_REFILL)) return;
+
+        // 秒 → tick：用 long 换算，配置上限放开后 int 乘法会溢出（表现为周期变负 / 变成每 tick）
+        int seconds = ConfigValues.get(EternalHeartConfig.DURABILITY_REFILL_INTERVAL);
+        int period = (int) Math.min(Integer.MAX_VALUE, Math.max(1L, (long) seconds * 20L));
+        if (!Ticker.due(player.getUUID(), tick, period)) return;
+
+        Inventory inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack.isEmpty() || !stack.isDamageableItem()) continue;
+            if (stack.getDamageValue() == 0) continue;
+            stack.setDamageValue(0);
+        }
+    }
+
+    // ============================================================
+    //  秒吃食物
+    // ============================================================
+
+    /**
+     * 秒吃食物：把进食的使用时长压到 1 tick（约 0.05 秒）。
+     *
+     * <p><b>为什么挂在这里</b>：原版「吃多久」只由 {@code Item#getUseDuration} 决定，
+     * 且在 {@code LivingEntity#startUsingItem} 里读取一次；Forge 恰好在该入口提供
+     * {@link LivingEntityUseItemEvent.Start} 用于改写时长，因此不必再用 Mixin 去写原版字段。</p>
+     *
+     * <p><b>两端都要生效</b>：客户端据此播放（几乎不可见的）进食动作并预测完成，
+     * 服务端据此真正完成进食、扣除食物并结算饱食度 —— 只改一侧会出现「动画结束了但没吃上」。</p>
+     *
+     * <p>只处理食物：药水、弓、盾牌等其它使用类物品的行为保持原样。</p>
+     */
+    public static void onUseItemStart(LivingEntityUseItemEvent.Start event) {
+        if (!ConfigValues.get(EternalHeartConfig.INSTANT_EAT)) return;
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (!EquipTracker.isEquipped(player)) return;
+        if (!event.getItem().isEdible()) return;
+        event.setDuration(1);
     }
 
     // ============================================================

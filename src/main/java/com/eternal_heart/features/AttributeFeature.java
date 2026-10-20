@@ -191,7 +191,8 @@ public class AttributeFeature implements IFeature {
         var server = ServerLifecycleHooks.getCurrentServer();
         if (server == null) return;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            if (EquipTracker.query(player)) {
+            // 用严格查询：数据不可用时不能当作已佩戴，否则会给未佩戴玩家凭空加上属性
+            if (EquipTracker.queryDefinite(player)) {
                 refresh(player);
             }
         }

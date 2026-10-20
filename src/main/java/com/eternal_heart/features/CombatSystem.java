@@ -102,11 +102,19 @@ public class CombatSystem implements IFeature {
         // 增伤管线（斩杀前，不含发光加成）
         float damage = amplify(player, target, event.getAmount());
 
-        // 斩杀：按目标最大生命值 10 倍结算，确保任何血量的目标都能被秒杀
+        // 斩杀：按目标最大生命值 10 倍结算，确保任何血量的目标都能被秒杀。
+        // 原实现「先取消事件再 hurt」在目标免疫 / 无敌帧 / 事件被别的模组拦下时这一击完全没有伤害
+        //（表现为「斩杀触发了但怪没死」），因此 hurt 之后仍存活时补一发真实伤害兜底。
         float execute = ConfigValues.get(EternalHeartConfig.EXECUTE_THRESHOLD).floatValue();
         if (execute > 0 && target.getHealth() / target.getMaxHealth() <= execute) {
             event.setCanceled(true);
-            target.hurt(player.damageSources().magic(), target.getMaxHealth() * 10f);
+            float executeDamage = Math.max(target.getMaxHealth() * 10f, 1f);
+            DamageSource source = player.damageSources().playerAttack(player);
+            target.invulnerableTime = 0;
+            target.hurt(source, executeDamage);
+            if (target.isAlive()) {
+                applyTrueDamage(target, executeDamage, source);
+            }
             return;
         }
 
@@ -151,16 +159,18 @@ public class CombatSystem implements IFeature {
         return damage;
     }
 
-    /** 溅射：对目标周围同种敌人造成一定比例的伤害。 */
+    /** 溅射：对目标周围的敌人造成一定比例的伤害（默认不分种类）。 */
     private static void splash(Player player, LivingEntity primary, float damage) {
         if (damage <= 0) return;
         double range = ConfigValues.get(EternalHeartConfig.AOE_SPLASH_RANGE);
         if (range <= 0) return;
 
         EntityType<?> type = primary.getType();
+        boolean allTypes = ConfigValues.get(EternalHeartConfig.AOE_SPLASH_ALL_TYPES);
         List<LivingEntity> nearby = primary.level().getEntitiesOfClass(LivingEntity.class,
                 Scan.box(primary, range),
-                e -> e != primary && e != player && e.isAlive() && e.getType() == type && e instanceof Enemy);
+                e -> e != primary && e != player && e.isAlive() && e instanceof Enemy
+                        && (allTypes || e.getType() == type));
         if (nearby.isEmpty()) return;
 
         runCascade(() -> {
@@ -181,7 +191,8 @@ public class CombatSystem implements IFeature {
         target.hurt(player.damageSources().magic(), extra);
     }
 
-    private static void stripBenefits(LivingEntity target) {
+    /** 移除目标身上全部有益效果（攻击压制模块复用同一实现，避免两套判定）。 */
+    public static void stripBenefits(LivingEntity target) {
         List<MobEffect> doomed = null;
         for (MobEffectInstance instance : target.getActiveEffects()) {
             if (instance.getEffect().getCategory() == MobEffectCategory.BENEFICIAL) {
@@ -216,7 +227,7 @@ public class CombatSystem implements IFeature {
         }
     }
 
-    /** 击杀连锁：对附近敌人造成被击杀者最大生命值 50% 的伤害并击退。 */
+    /** 击杀连锁：对附近敌人造成被击杀者最大生命值一定比例（可配）的伤害并击退。 */
     private static void killChain(Player player, LivingEntity killed) {
         double range = ConfigValues.get(EternalHeartConfig.KILL_CHAIN_RANGE);
         if (range <= 0) return;
@@ -226,7 +237,9 @@ public class CombatSystem implements IFeature {
                 e -> e != killed && e != player && e.isAlive() && e instanceof Enemy);
         if (nearby.isEmpty()) return;
 
-        float chainDamage = killed.getMaxHealth() * 0.5f;
+        float chainDamage = killed.getMaxHealth()
+                * ConfigValues.get(EternalHeartConfig.KILL_CHAIN_RATIO).floatValue();
+        if (chainDamage <= 0) return;
         runCascade(() -> {
             for (LivingEntity enemy : nearby) {
                 strike(player, enemy, chainDamage);
@@ -342,8 +355,9 @@ public class CombatSystem implements IFeature {
         target.hurt(player.damageSources().playerAttack(player), damage);
     }
 
+    /** 当前是否已到达「不允许再产生级联伤害」的深度（0 = 旧行为，完全不允许）。 */
     private static boolean cascading() {
-        return CASCADE_DEPTH.get()[0] > 0;
+        return CASCADE_DEPTH.get()[0] > ConfigValues.get(EternalHeartConfig.CASCADE_DEPTH_LIMIT);
     }
 
     private static void runCascade(Runnable action) {

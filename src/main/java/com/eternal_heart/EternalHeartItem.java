@@ -4,17 +4,22 @@ import com.eternal_heart.config.ConfigValues;
 import com.eternal_heart.core.Numbers;
 import com.eternal_heart.features.CustomAttributes;
 import com.eternal_heart.features.FeatureManager;
+import com.eternal_heart.features.HeartFusion;
 import com.eternal_heart.integration.Integrations;
 import com.google.common.collect.Multimap;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.monster.EnderMan;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.loot.LootContext;
 import top.theillusivec4.curios.api.SlotContext;
 import top.theillusivec4.curios.api.type.capability.ICurioItem;
 
@@ -29,7 +34,10 @@ public class EternalHeartItem extends Item implements ICurioItem {
 
     @Override
     public Multimap<Attribute, AttributeModifier> getAttributeModifiers(SlotContext context, UUID uuid, ItemStack stack) {
-        return FeatureManager.buildAttributeModifiers(context, uuid, stack);
+        Multimap<Attribute, AttributeModifier> modifiers = FeatureManager.buildAttributeModifiers(context, uuid, stack);
+        // 融合饰品的属性（UUID 已重新分配，避免与原饰品同时佩戴时互相覆盖）
+        HeartFusion.mergeAttributeModifiers(modifiers, context, stack);
+        return modifiers;
     }
 
     @Override
@@ -46,6 +54,49 @@ public class EternalHeartItem extends Item implements ICurioItem {
 
     @Override
     public boolean canUnequip(SlotContext context, ItemStack stack) { return true; }
+
+    // ==================== 饰品融合：把能力转发给融合进来的饰品 ====================
+
+    @Override
+    public void curioTick(SlotContext slotContext, ItemStack stack) {
+        HeartFusion.tick(slotContext, stack);
+    }
+
+    @Override
+    public void onEquip(SlotContext slotContext, ItemStack prevStack, ItemStack stack) {
+        HeartFusion.onEquip(slotContext, stack);
+    }
+
+    @Override
+    public void onUnequip(SlotContext slotContext, ItemStack newStack, ItemStack stack) {
+        HeartFusion.onUnequip(slotContext, stack);
+    }
+
+    @Override
+    public int getFortuneLevel(SlotContext slotContext, LootContext lootContext, ItemStack stack) {
+        return HeartFusion.fortune(slotContext, lootContext, stack);
+    }
+
+    @Override
+    public int getLootingLevel(SlotContext slotContext, DamageSource source, LivingEntity target,
+                               int baseLooting, ItemStack stack) {
+        return HeartFusion.looting(slotContext, source, target, baseLooting, stack);
+    }
+
+    @Override
+    public boolean makesPiglinsNeutral(SlotContext slotContext, ItemStack stack) {
+        return HeartFusion.makesPiglinsNeutral(slotContext, stack);
+    }
+
+    @Override
+    public boolean canWalkOnPowderedSnow(SlotContext slotContext, ItemStack stack) {
+        return HeartFusion.canWalkOnPowderedSnow(slotContext, stack);
+    }
+
+    @Override
+    public boolean isEnderMask(SlotContext slotContext, EnderMan enderMan, ItemStack stack) {
+        return HeartFusion.isEnderMask(slotContext, enderMan, stack);
+    }
 
     private static MutableComponent text(String key, Object... args) {
         return Component.translatable("tooltip.eternal_heart." + key, args);
@@ -157,6 +208,10 @@ public class EternalHeartItem extends Item implements ICurioItem {
         if (positive("BOSS_DAMAGE_BONUS")) parts.add(text("boss", percent("BOSS_DAMAGE_BONUS")));
         if (positive("EXECUTE_THRESHOLD")) parts.add(text("execute", percent("EXECUTE_THRESHOLD")));
         if (positive("IGNITE_CHANCE")) parts.add(text("ignite", percent("IGNITE_CHANCE"), value("IGNITE_DURATION")));
+        if (on("SUPPRESSION_ENABLED")) {
+            if (on("SUPPRESSION_ANTI_HEAL")) parts.add(text("suppression", value("SUPPRESSION_DURATION")));
+            if (on("SUPPRESSION_STRIP_BENEFITS")) parts.add(text("suppression_strip"));
+        }
         if (on("PIERCE_DAMAGE_CAP")) parts.add(text("pierce"));
         row(tooltip, ChatFormatting.RED, parts);
         if (positive("SHIELD_PER_SEC")) parts.add(text("shield", value("SHIELD_PER_SEC"), value("SHIELD_MAX")));
@@ -165,12 +220,14 @@ public class EternalHeartItem extends Item implements ICurioItem {
         if (on("TIME_STOP")) parts.add(text("timestop", value("TIME_STOP_DURATION")));
         row(tooltip, ChatFormatting.YELLOW, parts);
         flags(parts, "AUTO_SMELT");
+        if (on("INSTANT_MINE")) parts.add(text("instant_mine"));
+        if (on("INSTANT_MINE") && on("INSTANT_MINE_UNBREAKABLE")) parts.add(text("instant_mine_unbreakable"));
         if (on("VEIN_MINER")) parts.add(text("vein", value("VEIN_MAX_BLOCKS")));
         if (positive("FORTUNE_BONUS")) parts.add(text("fortune", value("FORTUNE_BONUS")));
         if (positive("LOOTING_BONUS")) parts.add(text("looting", value("LOOTING_BONUS")));
         row(tooltip, ChatFormatting.YELLOW, parts);
         if (on("UNDYING_TOTEM")) parts.add(text("undying", value("UNDYING_COOLDOWN")));
-        flags(parts, "VOID_RESCUE", "KILL_EXPLOSION", "INFINITE_ARROWS", "ENDER_CHEST_REMOTE");
+        flags(parts, "VOID_RESCUE", "KILL_EXPLOSION", "INFINITE_ARROWS", "ENDER_CHEST_REMOTE", "INSTANT_EAT", "DURABILITY_REFILL");
         if (on("SOUL_BIND")) parts.add(text("soul"));
         if (positive("KILL_HEAL_RATIO")) parts.add(text("kill_heal", percent("KILL_HEAL_RATIO")));
         row(tooltip, ChatFormatting.GREEN, parts);
@@ -183,8 +240,8 @@ public class EternalHeartItem extends Item implements ICurioItem {
         if (on("CURIO_UNBIND")) parts.add(text("curio_unbind"));
         if (on("CURIO_SEIZE_GUARD")) parts.add(text("curio_seize"));
         row(tooltip, ChatFormatting.GOLD, parts);
-        range(parts, "magnet", "MAGNET_RANGE");
-        range(parts, "glow", "GLOW_RANGE");
+        if (on("MAGNET_ENABLED")) range(parts, "magnet", "MAGNET_RANGE");
+        if (on("GLOW_ENABLED")) range(parts, "glow", "GLOW_RANGE");
         flags(parts, "LAVA_WALKING");
         if (on("WATER_WALKING")) parts.add(text("water"));
         row(tooltip, ChatFormatting.LIGHT_PURPLE, parts);
@@ -211,6 +268,14 @@ public class EternalHeartItem extends Item implements ICurioItem {
             if (on("INFINITE_BUCKET_LAVA")) parts.add(text("lava_bucket"));
         }
         row(tooltip, ChatFormatting.AQUA, parts);
+
+        // 融合进来的饰品（未融合时给一条合成提示）
+        List<Component> fusion = HeartFusion.tooltip(stack);
+        if (!fusion.isEmpty()) {
+            tooltip.add(Component.empty());
+            tooltip.addAll(fusion);
+        }
+
         tooltip.add(Component.empty());
         tooltip.add(text("extras").withStyle(ChatFormatting.GOLD, ChatFormatting.ITALIC));
         tooltip.add(text("xp", value("XP_MULTIPLIER")).withStyle(ChatFormatting.GREEN));

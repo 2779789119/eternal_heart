@@ -1,8 +1,0 @@
-{
-  "name": "永恒之心",
-  "icon": "curios:slot/empty_charm_slot",
-  "priority": 10,
-  "drop_rule": "DEFAULT",
-  "tags": ["curios:soul_stone"],
-  "order": 1000
-}

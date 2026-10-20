@@ -9,6 +9,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BonemealableBlock;
@@ -37,8 +38,8 @@ import java.util.List;
  */
 public class AuraSystem implements IFeature {
 
-    /** 生长光环垂直扫描范围：作物 / 树苗不会悬空更远（相比整立方体显著减少方块查询）。 */
-    private static final int GROWTH_VERTICAL = 3;
+    /** 生长光环垂直扫描范围默认值（配置项 GROWTH_VERTICAL 可调）。 */
+    private static final int DEFAULT_GROWTH_VERTICAL = 3;
 
     @Override
     public String getName() {
@@ -57,7 +58,31 @@ public class AuraSystem implements IFeature {
 
         long tick = level.getGameTime();
         applyCombatAuras(player, tick);
+        applyPeaceClean(player, tick);
         if (Ticker.due(player.getUUID(), tick, 20)) applyGrowthAura(player);
+    }
+
+    /**
+     * 和平光环·周期清理：不再只是「拦截新加入」，范围内的敌对生物会被直接移出世界。
+     *
+     * <p>原来的实现只取消 {@code EntityJoinLevelEvent}，因此以下情况完全无效：
+     * 佩戴前就已经存在的怪、从别处走过来的怪、世界加载时已经生成的怪。</p>
+     */
+    private void applyPeaceClean(Player player, long tick) {
+        if (!ConfigValues.get(EternalHeartConfig.PEACE_AURA_ENABLED)) return;
+        if (!ConfigValues.get(EternalHeartConfig.PEACE_AURA_CLEAN)) return;
+
+        double range = ConfigValues.get(EternalHeartConfig.PEACE_AURA_RANGE);
+        if (range <= 0) return;
+
+        int interval = ConfigValues.get(EternalHeartConfig.PEACE_AURA_CLEAN_INTERVAL);
+        if (!Ticker.due(player.getUUID(), tick, interval)) return;
+
+        for (LivingEntity entity : Scan.hostiles(player.level(), player, range)) {
+            if (entity instanceof Monster monster) {
+                monster.discard(); // 直接移除：不留尸体、不掉落、不触发死亡结算
+            }
+        }
     }
 
     // ============================================================
@@ -75,7 +100,8 @@ public class AuraSystem implements IFeature {
 
         double witherRange = ConfigValues.get(EternalHeartConfig.WITHER_AURA_ENABLED)
                 ? ConfigValues.get(EternalHeartConfig.WITHER_AURA_RANGE) : 0.0;
-        boolean witherDue = witherRange > 0 && Ticker.due(player.getUUID(), tick, 20);
+        boolean witherDue = witherRange > 0
+                && Ticker.due(player.getUUID(), tick, ConfigValues.get(EternalHeartConfig.WITHER_AURA_INTERVAL));
 
         if (!damageDue && !witherDue) return;
 
@@ -91,7 +117,9 @@ public class AuraSystem implements IFeature {
                 target.hurt(player.damageSources().magic(), amount);
             }
             if (witherDue) {
-                target.addEffect(new MobEffectInstance(MobEffects.WITHER, 60, 1, false, true));
+                int witherDuration = Math.max(1, ConfigValues.get(EternalHeartConfig.WITHER_AURA_DURATION));
+                int witherLevel = Math.max(0, ConfigValues.get(EternalHeartConfig.WITHER_AURA_LEVEL));
+                target.addEffect(new MobEffectInstance(MobEffects.WITHER, witherDuration, witherLevel, false, true));
             }
         }
     }
@@ -116,13 +144,15 @@ public class AuraSystem implements IFeature {
         int radius = (int) Math.ceil(range);
         double rangeSq = range * range;
         boolean autoReplant = ConfigValues.get(EternalHeartConfig.GROWTH_AUTO_REPLANT);
+        int vertical = ConfigValues.get(EternalHeartConfig.GROWTH_VERTICAL);
+        if (vertical < 0) vertical = DEFAULT_GROWTH_VERTICAL;
 
         List<BlockPos> candidates = null;
         List<BlockPos> mature = null;
 
         for (BlockPos pos : BlockPos.betweenClosed(
-                center.offset(-radius, -GROWTH_VERTICAL, -radius),
-                center.offset(radius, GROWTH_VERTICAL, radius))) {
+                center.offset(-radius, -vertical, -radius),
+                center.offset(radius, vertical, radius))) {
 
             if (pos.distSqr(center) > rangeSq) continue;
 

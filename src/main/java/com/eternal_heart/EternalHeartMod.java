@@ -8,6 +8,8 @@ import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.crafting.RecipeSerializer;
+import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -33,6 +35,14 @@ public class EternalHeartMod {
 
     public static final DeferredRegister<Item> ITEMS =
             DeferredRegister.create(ForgeRegistries.ITEMS, MODID);
+
+    public static final DeferredRegister<RecipeSerializer<?>> RECIPE_SERIALIZERS =
+            DeferredRegister.create(ForgeRegistries.RECIPE_SERIALIZERS, MODID);
+
+    /** 饰品融合：工作台里「永恒之心 + 任意饰品」→ 继承能力的永恒之心。 */
+    public static final RegistryObject<RecipeSerializer<?>> HEART_FUSION_SERIALIZER =
+            RECIPE_SERIALIZERS.register("heart_fusion",
+                    () -> new SimpleCraftingRecipeSerializer<>(com.eternal_heart.recipe.HeartFusionRecipe::new));
 
     public static final DeferredRegister<CreativeModeTab> CREATIVE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
@@ -75,6 +85,7 @@ public class EternalHeartMod {
     public EternalHeartMod() {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         ITEMS.register(modBus);
+        RECIPE_SERIALIZERS.register(modBus);
         CREATIVE_TABS.register(modBus);
         MOB_EFFECTS.register(modBus);
         LOOT_MODIFIERS.register(modBus);
@@ -89,6 +100,7 @@ public class EternalHeartMod {
         FeatureManager.registerFeatures();
         com.eternal_heart.network.ConfigNetwork.register();
         com.eternal_heart.network.TimeStopNetwork.register();
+        com.eternal_heart.network.FusionNetwork.register();
 
         MinecraftForge.EVENT_BUS.register(EternalHeartEvents.class);
     }

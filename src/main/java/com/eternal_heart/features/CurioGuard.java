@@ -39,6 +39,8 @@ import java.util.Collection;
  *       兜底删除任何被其它路径掉出的永恒之心；</li>
  *   <li>{@link #restoreOnRespawn}（{@code PlayerEvent.Clone}，在 Curios 复制数据之后）：
  *       按「原槽位 → 第一个可用空槽 → 背包 → 脚下」的顺序归还，绝不丢失。</li>
+ *   <li>死亡若被其它模组的复活类机制取消（灵魂石 / 不死图腾等在更晚的优先级取消事件），
+ *       则在同一事件的收尾阶段立即归还（{@link #undoDeath}）。</li>
  * </ol>
  *
  * <h3>2. 无视绑定（{@code curioUnbind}）</h3>
@@ -176,6 +178,51 @@ public class CurioGuard implements IFeature {
         giveToInventory(newPlayer, backup.stack());
     }
 
+    /**
+     * 死亡被其它模组取消时撤销处理：把死亡瞬间收回的饰品原样放回。
+     *
+     * <p>与「死亡保留物品」的撤销配对：饰品在死亡事件的很早优先级就被取下，
+     * 若复活类模组在更晚的优先级取消死亡，饰品会一直悬在备份里 —— 表现为
+     * 「复活了但饰品没了」。这里补齐。</p>
+     */
+    public static void undoDeath(Player player) {
+        Backup backup = BACKUPS.remove(player.getUUID());
+        if (backup == null) backup = readBackup(player);
+        if (backup == null) return;
+        clearBackup(player);
+        if (playerHasItem(player, backup.stack())) return; // 已由其它路径还回
+
+        ICuriosItemHandler handler = handlerOf(player);
+        boolean placed = handler != null && putBack(handler, backup);
+        if (!placed) giveToInventory(player, backup.stack());
+        AttributeFeature.refresh(player);
+    }
+
+    /**
+     * 重生 / 登录兜底：{@code PlayerEvent.Clone} 未触发时归还饰品
+     *（正常流程下备份已在 Clone 阶段消费，这里为空操作）。
+     */
+    public static void restoreIfPending(Player player) {
+        if (!player.isAlive()) return;
+
+        Backup backup = BACKUPS.remove(player.getUUID());
+        if (backup == null) backup = readBackup(player);
+        if (backup == null) return;
+        clearBackup(player);
+        if (!ConfigValues.get(EternalHeartConfig.CURIO_KEEP_ON_DEATH)) return;
+
+        // 严格判定「确实已佩戴」：数据不可用时按未归还处理，
+        // 宁可多还一次也不把备份误判为已存在而丢弃
+        if (EquipTracker.queryDefinite(player) || containsCurio(player)) return;
+
+        ICuriosItemHandler handler = handlerOf(player);
+        if (handler != null && putBack(handler, backup)) {
+            AttributeFeature.refresh(player);
+            return;
+        }
+        giveToInventory(player, backup.stack());
+    }
+
     /** 优先放回原槽位，其次任意可放置的空槽。 */
     private static boolean putBack(ICuriosItemHandler handler, Backup backup) {
         if (backup.identifier() != null
@@ -228,6 +275,16 @@ public class CurioGuard implements IFeature {
         if (!player.isAlive()) return;
         if (playerHasItem(player, removed)) return; // 玩家主动卸下
         SEIZED.put(player.getUUID(), new Backup(removed.copy(), identifier, index));
+    }
+
+    /**
+     * 是否已排队「收回被夺取的饰品」（下一 tick 会放回槽位）。
+     *
+     * <p>供卸下血量修复判断：被夺取的饰品马上会回到槽位、生命上限随之恢复，
+     * 此刻按卸下处理会白掉一截血。</p>
+     */
+    public static boolean isSeizePending(Player player) {
+        return SEIZED.get(player.getUUID()) != null;
     }
 
     /** 下一 tick 收回被夺取的饰品（优先原槽位，其次空槽，再次背包）并重建属性加成。 */

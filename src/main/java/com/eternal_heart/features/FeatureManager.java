@@ -58,6 +58,8 @@ public final class FeatureManager {
             new FurySystem(),
             new DefenseSystem(),
             new CombatSystem(),
+            // 攻击压制：命中后禁疗 / 清除增益（依赖 CombatSystem 先完成增伤与斩杀判定）
+            new SuppressionSystem(),
             new MobilitySystem(),
             new SurvivalSystem(),
             new UtilitySystem(),

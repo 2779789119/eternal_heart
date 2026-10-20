@@ -68,6 +68,20 @@ public final class TimeStop {
     // ============================================================
 
     /**
+     * 该维度当前是否处于时停（不考虑位置）。
+     *
+     * <p>供「整维度级」开关使用：方块实体的 tick 表是维度级的，无法按坐标逐条过滤。</p>
+     */
+    public static boolean frozenDimension(Level level) {
+        return activeFor(level);
+    }
+
+    /** 该维度是否处于时停（服务端调用走权威表，客户端走镜像表）。 */
+    public static boolean activeFor(Level level) {
+        return (level.isClientSide() ? CLIENT : SERVER).containsKey(level.dimension());
+    }
+
+    /**
      * 该实体此刻是否应被冻结。
      *
      * <p>热路径顺序经过精心安排：未激活时只是一次哈希表查询后返回，
@@ -92,6 +106,48 @@ public final class TimeStop {
     // ============================================================
     //  服务端：触发与推进
     // ============================================================
+
+    /**
+     * 切换时停：本维度若正处于<b>自己发动</b>的时停，则立即结束；否则尝试发动。
+     *
+     * <p><b>关闭判定必须排在冷却判定之前。</b>发动时就已经写入冷却，而冷却（默认 30 秒）
+     * 远长于持续（默认 5 秒），若先走 {@link #start} 的冷却分支，时停期间的按键只会得到
+     * 「冷却中」提示，永远走不到关闭 —— 这正是「开了关不掉」的成因。</p>
+     *
+     * @return 失败原因（供调用方提示）；成功返回 {@code null}
+     */
+    public static Component toggle(ServerPlayer player) {
+        if (stop(player)) return null;
+        // 走到这里说明本维度没有「自己发动」的时停：可能空闲，也可能被别人维持着
+        if (activeFor(player.level())) {
+            return Component.translatable("message.eternal_heart.timestop.occupied");
+        }
+        return start(player);
+    }
+
+    /**
+     * 提前结束自己发动的时停。
+     *
+     * <p>刻意<b>不清除冷却</b>：冷却的用途是防止反复开合刷冻结，提前关闭不应成为绕开它的手段。</p>
+     *
+     * @return 是否确实结束了一次时停
+     */
+    public static boolean stop(ServerPlayer player) {
+        ResourceKey<Level> dimension = player.level().dimension();
+        State state = SERVER.get(dimension);
+        if (state == null || !state.caster().equals(player.getUUID())) return false;
+        dismiss(player, dimension, state);
+        return true;
+    }
+
+    /** 结束一次时停：清服务端状态、通知客户端解除冻结、提示发动者。 */
+    private static void dismiss(ServerPlayer player, ResourceKey<Level> dimension, State state) {
+        SERVER.remove(dimension);
+        MinecraftServer server = player.getServer();
+        if (server != null) broadcast(server, dimension, state, true);
+        player.displayClientMessage(
+                Component.translatable("message.eternal_heart.timestop.stopped"), true);
+    }
 
     /**
      * 尝试发动时停。

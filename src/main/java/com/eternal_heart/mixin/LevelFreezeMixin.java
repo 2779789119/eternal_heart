@@ -1,5 +1,7 @@
 package com.eternal_heart.mixin;
 
+import com.eternal_heart.EternalHeartConfig;
+import com.eternal_heart.config.ConfigValues;
 import com.eternal_heart.features.TimeStop;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
@@ -29,6 +31,12 @@ import java.util.function.Consumer;
  *
  * <p>{@code EntityFreezeMixin} 与 {@code LivingEntityMixin} 中的同名注入保留为双保险：
  * 少数模组会绕过世界 tick 直接调用 {@code entity.tick()}。</p>
+ *
+ * <h3>方块实体</h3>
+ * <p>实体的 tick 和方块实体的 tick 是两条独立的路径：{@code Level#tickBlockEntities}
+ * 遍历 {@code blockEntityTickers} 逐个调用。旧实现只冻结实体，因此「时停」期间
+ * 熔炉照烧、漏斗照搬、刷怪笼照刷。这里在 {@code Level}（两端共用）的入口取消，
+ * 让机器逻辑一并停下。</p>
  */
 @Mixin(Level.class)
 public abstract class LevelFreezeMixin {
@@ -36,6 +44,21 @@ public abstract class LevelFreezeMixin {
     @Inject(method = "guardEntityTick", at = @At("HEAD"), cancellable = true)
     private void eternalHeart$freezeInTimeStop(Consumer<Entity> consumer, Entity entity, CallbackInfo ci) {
         if (TimeStop.frozen(entity)) {
+            ci.cancel();
+        }
+    }
+
+    /**
+     * 时停·方块实体冻结（服务端 / 客户端共用入口）。
+     *
+     * <p>整维度取消而不是逐个判断位置：ticker 表是维度级的，逐条坐标过滤成本远高于收益；
+     * 半径模式下多冻结几条远处机器并无副作用（范围内的目标本来就被冻结）。</p>
+     */
+    @Inject(method = "tickBlockEntities", at = @At("HEAD"), cancellable = true)
+    private void eternalHeart$freezeBlockEntities(CallbackInfo ci) {
+        if (!ConfigValues.get(EternalHeartConfig.TIME_STOP)) return;
+        if (!ConfigValues.get(EternalHeartConfig.TIME_STOP_FREEZE_BLOCK_ENTITIES)) return;
+        if (TimeStop.frozenDimension((Level) (Object) this)) {
             ci.cancel();
         }
     }

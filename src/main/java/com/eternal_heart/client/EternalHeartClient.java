@@ -24,7 +24,7 @@ public class EternalHeartClient {
             "key.categories.eternal_heart"
     );
 
-    /** 发动时停的快捷键，默认 G 键（发动与校验都在服务端，见 TimeStopNetwork） */
+    /** 发动 / 关闭时停的快捷键，默认 G 键（切换与校验都在服务端，见 TimeStopNetwork） */
     public static final KeyMapping TIME_STOP = new KeyMapping(
             "key.eternal_heart.time_stop",
             InputConstants.Type.KEYSYM,
@@ -32,26 +32,33 @@ public class EternalHeartClient {
             "key.categories.eternal_heart"
     );
 
+    /**
+     * 注册「头顶光环」饰品渲染器。
+     *
+     * <p>Curios 只在物品真正佩戴于饰品栏时调用渲染器 —— 因此无需额外判定装备状态，
+     * 拿在手上 / 放在背包里都不会出现光环，卸下即刻消失。</p>
+     *
+     * <p><b>装了 YSM 时跳过注册</b>：YSM 接管玩家渲染，原版渲染层根本不会执行，
+     * 注册了也是死代码；此时改由 {@link HaloWorldRenderer} 在世界渲染阶段自绘。
+     * 两条路径互斥，避免「玩家用原版模型」时同时画出两个光环。</p>
+     */
+    @SubscribeEvent
+    public static void registerCurioRenderers(net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent event) {
+        if (com.eternal_heart.integration.Integrations.isYsmLoaded()) return;
+        event.enqueueWork(() -> top.theillusivec4.curios.api.client.CuriosRendererRegistry.register(
+                EternalHeartMod.ETERNAL_HEART.get(), () -> HaloCurioRenderer.INSTANCE));
+    }
+
     @SubscribeEvent
     public static void registerKeyMappings(RegisterKeyMappingsEvent event) {
         com.eternal_heart.network.ConfigNetwork.setClientReceiver(ClientConfigState::receive);
+        // 融合开关：服务端拒绝时界面要把开关翻回去
+        com.eternal_heart.network.FusionNetwork.setClientReceiver(FusionToggleScreen::receive);
         // 时停状态必须同步到客户端：否则弹射物会在本地继续飞（客户端也会 tick 实体）
         com.eternal_heart.network.TimeStopNetwork.setClientReceiver(sync ->
                 com.eternal_heart.features.TimeStop.applySync(
                         sync.dimension(), sync.remaining(), sync.caster(), sync.center(), sync.clear()));
         event.register(OPEN_PANEL);
         event.register(TIME_STOP);
-    }
-
-    /**
-     * 注册「永恒之心·碎影」屏幕覆盖层（手持/佩戴饰品时的碎片层 + 按住 Shift 聚合出数据面板）。
-     *
-     * <p>用 {@code registerBelowAll}：碎片层画在<b>所有原版 HUD 之下</b> —— 血条、饥饿、经验、
-     * 物品栏、聊天都盖在碎片上面，不会再出现碎片压在物品栏/血条上的情况
-     * （用户 2026-09-23："把碎片显示弄在血条和物品栏以下，不能覆盖物品栏与血条"）。</p>
-     */
-    @SubscribeEvent
-    public static void registerGuiOverlays(net.minecraftforge.client.event.RegisterGuiOverlaysEvent event) {
-        event.registerBelowAll("eternal_heart_shards", new ShardVeilOverlay());
     }
 }

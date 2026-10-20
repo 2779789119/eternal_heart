@@ -7,13 +7,13 @@ modId="eternal_heart"
 version="${mod_version}"
 displayName="eternal_heart-永恒之心"
 logoFile="eternal_heart_logo.png"
-description="还原泰拉瑞亚 Fargo魂石模组「永恒之魂」的终极饰品。需 MineFargo 作为前置。可选集成：FTB Ultimine（连锁挖掘）、Caelus（鞘翅飞行）、AttributeFix（解除血量上限）。"
+description="还原泰拉瑞亚 Fargo魂石模组「永恒之魂」的终极饰品，自带专属饰品栏（永恒之心），佩戴即开启数十项能力。需 Curios 作为前置。可选集成：FTB Ultimine（连锁挖掘）、Caelus（鞘翅飞行）、AttributeFix（解除血量上限）。"
 authors=["Adapted from Inolia_Zaicek's MineFargo"]
 
 [[dependencies.eternal_heart]]
     modId="forge"
     mandatory=true
-    versionRange="[47.4,)"
+    versionRange="[47.1.3,)"
     ordering="NONE"
     side="BOTH"
 
@@ -28,13 +28,6 @@ authors=["Adapted from Inolia_Zaicek's MineFargo"]
     modId="curios"
     mandatory=true
     versionRange="[5.14,)"
-    ordering="AFTER"
-    side="BOTH"
-
-[[dependencies.eternal_heart]]
-    modId="mine_fargo"
-    mandatory=${mine_fargo_mandatory}
-    versionRange="[1.2,)"
     ordering="AFTER"
     side="BOTH"
 

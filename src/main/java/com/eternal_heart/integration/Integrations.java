@@ -11,11 +11,16 @@ public final class Integrations {
     private static final boolean FTB_ULTIMINE_LOADED;
     private static final boolean CAELUS_LOADED;
     private static final boolean ATTRIBUTE_FIX_LOADED;
+    private static final boolean GOETY_LOADED;
+    private static final boolean YSM_LOADED;
 
     static {
         FTB_ULTIMINE_LOADED = ModList.get().isLoaded("ftbultimine");
         CAELUS_LOADED = ModList.get().isLoaded("caelus");
         ATTRIBUTE_FIX_LOADED = ModList.get().isLoaded("attributefix");
+        GOETY_LOADED = ModList.get().isLoaded("goety");
+        // YSM 2.x 的 modId 是 yes_steve_model，3.0 起改名为 ysm —— 两个都认
+        YSM_LOADED = ModList.get().isLoaded("yes_steve_model") || ModList.get().isLoaded("ysm");
     }
 
     // ==================== 查询 ====================
@@ -23,6 +28,15 @@ public final class Integrations {
     public static boolean isFtbUltimineLoaded() { return FTB_ULTIMINE_LOADED; }
     public static boolean isCaelusLoaded()       { return CAELUS_LOADED; }
     public static boolean isAttributeFixLoaded() { return ATTRIBUTE_FIX_LOADED; }
+    /** 是否安装了诡厄巫法（Goety）—— 自定义仪式配方为软依赖，未安装时忽略相关条目。 */
+    public static boolean isGoetyLoaded()        { return GOETY_LOADED; }
+    /**
+     * 是否安装了 YSM（Yes Steve Model，自定义玩家模型）。
+     *
+     * <p>它会接管玩家渲染，使原版实体渲染层（含 Curios 的渲染层）不再执行，
+     * 因此头顶光环需要改由 {@code HaloWorldRenderer} 在世界渲染阶段自绘。</p>
+     */
+    public static boolean isYsmLoaded()          { return YSM_LOADED; }
 
     // ==================== FTB Ultimine ====================
 

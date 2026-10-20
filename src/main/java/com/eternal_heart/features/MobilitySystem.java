@@ -50,17 +50,7 @@ public class MobilitySystem implements IFeature {
     private static final UUID STEP_UUID = UUID.fromString("e1a00009-0000-0000-0000-000000000000");
 
     // ==================== 内置自定义滑翔参数（未安装 Caelus 时使用） ====================
-
-    /** 进入滑翔的下落速度阈值：下落速度低于此值（自由落体）时自动开始滑翔 */
-    private static final double GLIDE_START_FALL_SPEED = -0.6;
-    /** 滑翔时下落速度的衰减系数（每 tick 乘以此值，平滑过渡到缓降） */
-    private static final double GLIDE_FALL_DAMPING = 0.7;
-    /** 滑翔的最大下落速度（格/tick） */
-    private static final double GLIDE_MAX_FALL_SPEED = -0.22;
-    /** 滑翔时沿视角方向的加速度（每 tick，格/tick²） */
-    private static final double GLIDE_ACCELERATION = 0.06;
-    /** 滑翔的水平速度上限（格/tick） */
-    private static final double GLIDE_MAX_HORIZONTAL_SPEED = 1.1;
+    // 全部改为配置项（GLIDE_*），此处不再保留硬编码常量。
 
     /** 台阶辅助的额外高度（格） */
     private static final double STEP_HEIGHT_BONUS = 0.65;
@@ -231,9 +221,11 @@ public class MobilitySystem implements IFeature {
     /**
      * 内置自定义滑翔（未安装 Caelus 的保底实现，纯事件驱动、不依赖原版鞘翅判定与 Mixin）。
      *
-     * <p>触发：空中自由落体（下落速度低于 {@link #GLIDE_START_FALL_SPEED}）时自动进入滑翔 ——
-     * 下落速度每 tick 按 {@link #GLIDE_FALL_DAMPING} 平滑衰减至 {@link #GLIDE_MAX_FALL_SPEED}，
-     * 同时沿视角方向持续加速（水平速度上限 {@link #GLIDE_MAX_HORIZONTAL_SPEED} 格/tick）。</p>
+     * <p>触发：空中自由落体（下落速度低于「滑翔·起滑下落阈值」）时自动进入滑翔 ——
+     * 下落速度每 tick 按「滑翔·下落阻尼」平滑衰减至「滑翔·最大下落速度」，
+     * 同时沿视角方向持续加速（受「滑翔·水平速度上限」限制，填 ≤0 则不限制）。</p>
+     *
+     * <p>全部参数见配置分组「机动系统」中的 GLIDE_* 项。</p>
      *
      * <p>取消方式：潜行键（主动快速下落）；落地 / 入水 / 攀爬 / 骑乘时自动失效。
      * 滑翔期间摔落距离清零（免摔伤，符合鞘翅特性）。</p>
@@ -246,20 +238,27 @@ public class MobilitySystem implements IFeature {
         if (player.isShiftKeyDown()) return; // 潜行 = 主动快速下落
 
         Vec3 motion = player.getDeltaMovement();
-        if (motion.y > GLIDE_START_FALL_SPEED) return; // 尚未进入自由落体
+        double startFall = ConfigValues.get(EternalHeartConfig.GLIDE_START_FALL_SPEED);
+        if (motion.y > startFall) return; // 尚未进入自由落体
 
         // 平滑缓降 + 沿视角方向前进
-        double vy = Math.max(motion.y * GLIDE_FALL_DAMPING, GLIDE_MAX_FALL_SPEED);
+        double damping = ConfigValues.get(EternalHeartConfig.GLIDE_FALL_DAMPING);
+        double maxFall = ConfigValues.get(EternalHeartConfig.GLIDE_MAX_FALL_SPEED);
+        double acceleration = ConfigValues.get(EternalHeartConfig.GLIDE_ACCELERATION);
+        double vy = Math.max(motion.y * damping, maxFall);
         Vec3 look = player.getLookAngle();
-        double vx = motion.x + look.x * GLIDE_ACCELERATION;
-        double vz = motion.z + look.z * GLIDE_ACCELERATION;
+        double vx = motion.x + look.x * acceleration;
+        double vz = motion.z + look.z * acceleration;
 
-        // 水平速度上限（防止无限加速）
-        double horizontal = Math.sqrt(vx * vx + vz * vz);
-        if (horizontal > GLIDE_MAX_HORIZONTAL_SPEED) {
-            double scale = GLIDE_MAX_HORIZONTAL_SPEED / horizontal;
-            vx *= scale;
-            vz *= scale;
+        // 水平速度上限（≤0 = 不限制，允许无限加速）
+        double maxHorizontal = ConfigValues.get(EternalHeartConfig.GLIDE_MAX_HORIZONTAL_SPEED);
+        if (maxHorizontal > 0) {
+            double horizontal = Math.sqrt(vx * vx + vz * vz);
+            if (horizontal > maxHorizontal) {
+                double scale = maxHorizontal / horizontal;
+                vx *= scale;
+                vz *= scale;
+            }
         }
 
         player.setDeltaMovement(vx, vy, vz);
@@ -286,7 +285,8 @@ public class MobilitySystem implements IFeature {
     }
 
     private void handleJumpBoost(Player player) {
-        OwnedEffects.maintain(player, MobEffects.JUMP, ConfigValues.get(EternalHeartConfig.JUMP_BOOST), 80, 0, 20);
+        OwnedEffects.maintain(player, MobEffects.JUMP, ConfigValues.get(EternalHeartConfig.JUMP_BOOST),
+                80, ConfigValues.get(EternalHeartConfig.JUMP_BOOST_LEVEL), 20);
     }
 
     /** 潜行缓降：空中潜行时缓速下落并允许向前滑行。 */
@@ -299,7 +299,8 @@ public class MobilitySystem implements IFeature {
                 || player.getAbilities().flying) {
             return;
         }
-        OwnedEffects.maintain(player, MobEffects.SLOW_FALLING, true, 20, 0, 5);
+        OwnedEffects.maintain(player, MobEffects.SLOW_FALLING, true, 20,
+                ConfigValues.get(EternalHeartConfig.SLOW_FALL_GLIDE_LEVEL), 5);
 
         if (player.zza > 0) {
             Vec3 look = player.getLookAngle();
@@ -310,7 +311,8 @@ public class MobilitySystem implements IFeature {
 
     private void handleDolphinsGrace(Player player) {
         OwnedEffects.maintain(player, MobEffects.DOLPHINS_GRACE,
-                ConfigValues.get(EternalHeartConfig.DOLPHINS_GRACE) && player.isInWater(), 40, 0, 10);
+                ConfigValues.get(EternalHeartConfig.DOLPHINS_GRACE) && player.isInWater(), 40,
+                ConfigValues.get(EternalHeartConfig.DOLPHINS_GRACE_LEVEL), 10);
     }
 
     // ============================================================

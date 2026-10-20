@@ -8,6 +8,7 @@ import com.eternal_heart.core.Numbers;
 import com.eternal_heart.features.CurioGuard;
 import com.eternal_heart.features.CustomAttributes;
 import com.eternal_heart.features.CustomRecipes;
+import com.eternal_heart.features.HeartFusion;
 import com.eternal_heart.features.TimeStop;
 import com.eternal_heart.integration.RevelationFixCompat;
 import com.eternal_heart.network.ConfigNetwork;
@@ -30,11 +31,15 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.ForgeRegistries;
+import top.theillusivec4.curios.api.CuriosApi;
+import top.theillusivec4.curios.api.SlotContext;
+import top.theillusivec4.curios.api.SlotResult;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -100,6 +105,8 @@ public final class EternalHeartCommands {
                         .then(Commands.literal("recipe")
                                 .then(Commands.literal("reload")
                                         .executes(ctx -> reloadRecipes(ctx.getSource()))))
+                        .then(Commands.literal("fusion")
+                                .executes(ctx -> fusionReport(ctx.getSource())))
                         .then(Commands.literal("timestop")
                                 .executes(ctx -> timeStop(ctx.getSource()))));
     }
@@ -401,7 +408,46 @@ public final class EternalHeartCommands {
         return added;
     }
 
-    /** 手动发动时停：与快捷键走完全相同的校验（开关 / 冷却 / 佩戴）。 */
+    /**
+     * 融合诊断：输出手上（或饰品栏里）永恒之心的融合条目，以及每条的
+     * 「Curios 能力 / 解析出的属性条数 / 已真正挂到玩家属性上的条数」。
+     */
+    private static int fusionReport(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        ItemStack heart = player.getMainHandItem();
+        if (!heart.is(EternalHeartMod.ETERNAL_HEART.get())) {
+            heart = CuriosApi.getCuriosHelper()
+                    .findFirstCurio(player, EternalHeartMod.ETERNAL_HEART.get())
+                    .map(SlotResult::stack)
+                    .orElse(ItemStack.EMPTY);
+        }
+        if (heart.isEmpty()) {
+            source.sendFailure(Component.literal("主手或饰品栏里没有永恒之心"));
+            return 0;
+        }
+
+        List<HeartFusion.Fused> fused = HeartFusion.fused(heart);
+        int disabled = (int) fused.stream().filter(entry -> !entry.enabled()).count();
+        source.sendSuccess(() -> Component.literal("融合条目: " + fused.size()
+                + " / 上限 " + ConfigValues.get(EternalHeartConfig.FUSION_LIMIT)
+                + " / 已关闭 " + disabled), false);
+
+        SlotContext base = new SlotContext("eternal_heart", player, 0, false, true);
+        for (HeartFusion.Fused entry : fused) {
+            String id = BuiltInRegistries.ITEM.getKey(entry.stack().getItem()).toString();
+            boolean capability = HeartFusion.debugCapability(entry);
+            int modifiers = HeartFusion.debugModifierCount(entry, base);
+            int applied = HeartFusion.debugAppliedCount(entry, base, player);
+            source.sendSuccess(() -> Component.literal(" - " + id
+                    + " | 开关=" + (entry.enabled() ? "开" : "关")
+                    + " | 能力=" + (capability ? "是" : "否")
+                    + " | 属性=" + modifiers
+                    + " | 已应用=" + applied), false);
+        }
+        return Math.max(1, fused.size());
+    }
+
+    /** 手动切换时停：与快捷键走完全相同的校验（开关 / 冷却 / 佩戴），已在时停中则关闭。 */
     private static int timeStop(CommandSourceStack source) {
         ServerPlayer player;
         try {
@@ -410,12 +456,13 @@ public final class EternalHeartCommands {
             source.sendFailure(Component.translatable(TIMESTOP_PREFIX + "player_only"));
             return 0;
         }
-        Component failure = TimeStop.start(player);
+        boolean closing = TimeStop.activeFor(player.level());
+        Component failure = TimeStop.toggle(player);
         if (failure != null) {
             source.sendFailure(failure);
             return 0;
         }
-        source.sendSuccess(() -> Component.translatable(TIMESTOP_PREFIX + "started"), true);
+        source.sendSuccess(() -> Component.translatable(TIMESTOP_PREFIX + (closing ? "stopped" : "started")), true);
         return 1;
     }
 }

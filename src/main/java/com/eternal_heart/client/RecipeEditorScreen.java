@@ -1,11 +1,13 @@
 package com.eternal_heart.client;
 
+import com.eternal_heart.client.ui.UiButton;
+import com.eternal_heart.client.ui.UiScreen;
+import com.eternal_heart.client.ui.UiTheme;
 import com.eternal_heart.features.RecipeText;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -37,25 +39,15 @@ import java.util.function.Consumer;
  * <p>左键点格子 = 选物品，右键点格子 = 清空；点击右侧已配置列表可载回编辑器修改
  * （含标签 {@code #tag} 的配方无法还原成具体物品，会提示改用文本模式）。</p>
  */
-public class RecipeEditorScreen extends Screen {
+public class RecipeEditorScreen extends UiScreen {
 
     // ===================== 布局 =====================
-    private static final int CELL = 26;
-    private static final int GAP = 2;
-    private static final int ROW_H = 14;
-
-    // ===================== 配色 =====================
-    private static final int COL_PANEL = 0xF60E1521;
-    private static final int COL_BORDER = 0xFF9A7B3F;
-    private static final int COL_GOLD = 0xFFE8C860;
-    private static final int COL_TEXT = 0xFFE6EAF0;
-    private static final int COL_TEXT_DIM = 0xFF8A93A0;
-    private static final int COL_SLOT = 0x30FFFFFF;
-    private static final int COL_SLOT_HOVER = 0x50E8C860;
-    private static final int COL_SLOT_BORDER = 0xFF6B6152;
-    private static final int COL_ROW_ALT = 0x08FFFFFF;
-    private static final int COL_ROW_HOVER = 0x16FFFFFF;
-    private static final int COL_SELECTED = 0x30E8C860;
+    private static final int CELL = 30;
+    private static final int GAP = 3;
+    private static final int ROW_H = 22;
+    private static final int ROW_STEP = 26;
+    private static final int HEADER_H = 52;
+    private static final int FOOTER_H = 38;
 
     private enum Mode {SHAPED, SHAPELESS, COOKING}
 
@@ -64,6 +56,7 @@ public class RecipeEditorScreen extends Screen {
     private final List<String> entries;
     private final Consumer<List<String>> onChange;
     private final ItemStack[] grid = new ItemStack[9];
+    private final UiButton[] modeButtons = new UiButton[Mode.values().length];
 
     private ItemStack output = ItemStack.EMPTY;
     private int outputCount = 1;
@@ -71,9 +64,8 @@ public class RecipeEditorScreen extends Screen {
     private int selected = -1;
     private int scroll, scrollMax;
 
-    private int panelX, panelY, panelW, panelH;
     private int gridX, gridY;
-    private int outputX, outputY, countX;
+    private int outputX, outputY;
     private int listX1, listX2, listTop, listBot;
 
     public RecipeEditorScreen(Screen parent, List<String> initial, Consumer<List<String>> onChange) {
@@ -90,58 +82,56 @@ public class RecipeEditorScreen extends Screen {
 
     @Override
     protected void init() {
-        panelW = Math.max(300, Math.min(this.width - 12, 460));
-        panelH = Math.max(240, Math.min(this.height - 12, 340));
-        panelX = (this.width - panelW) / 2;
-        panelY = (this.height - panelH) / 2;
+        layoutPanel(540, 410, 420, 320);
 
-        gridX = panelX + 16;
-        gridY = panelY + 56;
-        outputX = panelX + 16 + 3 * (CELL + GAP) + 26;
+        int contentTop = panelY + HEADER_H;
+        gridX = panelX + 20;
+        gridY = contentTop + 50;
+        outputX = gridX + 3 * (CELL + GAP) - GAP + 34;
         outputY = gridY;
-        countX = outputX;
-        listX1 = panelX + 12;
-        listX2 = panelX + panelW - 12;
-        listTop = panelY + 158;
-        listBot = panelY + panelH - 28;
+        listX1 = panelX + 20;
+        listX2 = panelX + panelW - 20;
+        listTop = gridY + CELL + 40;
+        listBot = panelY + panelH - FOOTER_H - 8;
 
-        // 模式切换
-        int modeY = panelY + 28;
-        int modeW = 74;
+        // 模式切换（分段控件）
         Mode[] modes = Mode.values();
+        int modeY = contentTop + 12;
         for (int i = 0; i < modes.length; i++) {
             Mode m = modes[i];
-            this.addRenderableWidget(Button.builder(modeLabel(m), b -> mode = m)
-                    .bounds(panelX + 16 + i * (modeW + 4), modeY, modeW, 18).build());
+            modeButtons[i] = this.addRenderableWidget(UiButton.segment(
+                    panelX + 20 + i * 84, modeY, 78, 20, modeLabel(m), () -> {
+                        mode = m;
+                        refreshModeButtons();
+                    }));
         }
+        refreshModeButtons();
 
         // 产出数量
-        this.addRenderableWidget(Button.builder(Component.literal("-"), b -> {
-                    outputCount = Math.max(1, outputCount - 1);
-                })
-                .bounds(countX + 62, outputY + 30, 18, 18).build());
-        this.addRenderableWidget(Button.builder(Component.literal("+"), b -> {
-                    outputCount = Math.min(64, outputCount + 1);
-                })
-                .bounds(countX + 104, outputY + 30, 18, 18).build());
+        this.addRenderableWidget(UiButton.secondary(outputX + 36, outputY + 6, 18, 18,
+                Component.literal("-"), () -> outputCount = Math.max(1, outputCount - 1)));
+        this.addRenderableWidget(UiButton.secondary(outputX + 84, outputY + 6, 18, 18,
+                Component.literal("+"), () -> outputCount = Math.min(64, outputCount + 1)));
 
         // 底部操作
-        int buttonY = panelY + panelH - 24;
-        this.addRenderableWidget(Button.builder(
-                        Component.translatable("config.eternal_heart.recipe_editor.add"), b -> commit(false))
-                .bounds(panelX + 12, buttonY, 60, 18).build());
-        this.addRenderableWidget(Button.builder(
-                        Component.translatable("config.eternal_heart.recipe_editor.update"), b -> commit(true))
-                .bounds(panelX + 76, buttonY, 60, 18).build());
-        this.addRenderableWidget(Button.builder(
-                        Component.translatable("config.eternal_heart.recipe_editor.remove"), b -> removeSelected())
-                .bounds(panelX + 140, buttonY, 60, 18).build());
-        this.addRenderableWidget(Button.builder(
-                        Component.translatable("config.eternal_heart.recipe_editor.text_mode"), b -> openTextMode())
-                .bounds(panelX + 204, buttonY, 60, 18).build());
-        this.addRenderableWidget(Button.builder(
-                        Component.translatable("config.eternal_heart.recipe_editor.done"), b -> onClose())
-                .bounds(panelX + panelW - 72, buttonY, 60, 18).build());
+        int buttonY = panelY + panelH - FOOTER_H + 8;
+        this.addRenderableWidget(UiButton.primary(panelX + 20, buttonY, 54, 22,
+                Component.translatable("config.eternal_heart.recipe_editor.add"), () -> commit(false)));
+        this.addRenderableWidget(UiButton.secondary(panelX + 80, buttonY, 72, 22,
+                Component.translatable("config.eternal_heart.recipe_editor.update"), () -> commit(true)));
+        this.addRenderableWidget(UiButton.danger(panelX + 158, buttonY, 72, 22,
+                Component.translatable("config.eternal_heart.recipe_editor.remove"), this::removeSelected));
+        this.addRenderableWidget(UiButton.ghost(panelX + 236, buttonY, 70, 22,
+                Component.translatable("config.eternal_heart.recipe_editor.text_mode"), this::openTextMode));
+        this.addRenderableWidget(UiButton.secondary(panelX + panelW - 20 - 60, buttonY, 60, 22,
+                Component.translatable("config.eternal_heart.recipe_editor.done"), this::onClose));
+    }
+
+    private void refreshModeButtons() {
+        Mode[] modes = Mode.values();
+        for (int i = 0; i < modes.length; i++) {
+            if (modeButtons[i] != null) modeButtons[i].setSelected(mode == modes[i]);
+        }
     }
 
     private Component modeLabel(Mode m) {
@@ -153,75 +143,64 @@ public class RecipeEditorScreen extends Screen {
     // ============================================================
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(graphics);
-        graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, COL_PANEL);
-        graphics.renderOutline(panelX, panelY, panelW, panelH, COL_BORDER);
-        graphics.drawString(this.font, this.title, panelX + 12, panelY + 8, COL_GOLD, false);
-        graphics.drawString(this.font,
-                Component.translatable("config.eternal_heart.recipe_editor.current_mode", modeLabel(mode)),
-                panelX + panelW - 150, panelY + 8, COL_TEXT_DIM, false);
+    public void render(GuiGraphics g, int mx, int my, float pt) {
+        renderBackground(g);
+        drawPanel(g);
+        drawHeader(g, this.title, null, HEADER_H);
 
         // 3×3 网格
-        int hoveredCell = cellAt(mouseX, mouseY);
+        int hoveredCell = cellAt(mx, my);
         for (int index = 0; index < 9; index++) {
             int column = index % 3;
             int row = index / 3;
             int x = gridX + column * (CELL + GAP);
             int y = gridY + row * (CELL + GAP);
-            graphics.fill(x, y, x + CELL, y + CELL, index == hoveredCell ? COL_SLOT_HOVER : COL_SLOT);
-            graphics.renderOutline(x, y, CELL, CELL, COL_SLOT_BORDER);
-            if (!grid[index].isEmpty()) graphics.renderItem(grid[index], x + 5, y + 5);
+            UiTheme.slot(g, x, y, CELL, index == hoveredCell);
+            if (!grid[index].isEmpty()) g.renderItem(grid[index], x + 7, y + 7);
         }
 
-        // 产出槽
-        graphics.fill(outputX, outputY, outputX + CELL, outputY + CELL,
-                onOutput(mouseX, mouseY) ? COL_SLOT_HOVER : COL_SLOT);
-        graphics.renderOutline(outputX, outputY, CELL, CELL, COL_SLOT_BORDER);
-        if (!output.isEmpty()) graphics.renderItem(output, outputX + 5, outputY + 5);
-        graphics.drawString(this.font,
-                Component.translatable("config.eternal_heart.recipe_editor.output"),
-                outputX, outputY - 11, COL_TEXT_DIM, false);
-        graphics.drawString(this.font,
-                Component.translatable("config.eternal_heart.recipe_editor.count", outputCount),
-                countX + 63, outputY + 34, COL_TEXT, false);
+        // 箭头 + 产出槽
+        g.drawString(this.font, "→", gridX + 3 * (CELL + GAP) - GAP + 12, gridY + 11,
+                UiTheme.TEXT_MUTED);
+        UiTheme.slot(g, outputX, outputY, CELL, onOutput(mx, my));
+        if (!output.isEmpty()) g.renderItem(output, outputX + 7, outputY + 7);
+        g.drawString(this.font, Component.translatable("config.eternal_heart.recipe_editor.output"),
+                outputX, outputY - 11, UiTheme.TEXT_DIM);
+        g.drawCenteredString(this.font,
+                Component.literal("x" + outputCount).getString(), outputX + 69, outputY + 11, UiTheme.TEXT);
 
         // 已配置列表
-        graphics.drawString(this.font,
+        g.drawString(this.font,
                 Component.translatable("config.eternal_heart.recipe_editor.saved", entries.size()),
-                listX1, listTop - 11, COL_TEXT_DIM, false);
-        graphics.enableScissor(listX1, listTop, listX2, listBot);
-        int hovered = rowAt(mouseX, mouseY);
+                listX1, listTop - 14, UiTheme.TEXT_DIM);
+        g.enableScissor(listX1, listTop, listX2, listBot);
+        int hovered = rowAt(mx, my);
         for (int index = 0; index < entries.size(); index++) {
-            int rowY = listTop + index * ROW_H - scroll;
-            if (rowY + ROW_H < listTop || rowY > listBot) continue;
-            if (index == selected) graphics.fill(listX1, rowY, listX2, rowY + ROW_H, COL_SELECTED);
-            else if (index == hovered) graphics.fill(listX1, rowY, listX2, rowY + ROW_H, COL_ROW_HOVER);
-            else if ((index & 1) == 1) graphics.fill(listX1, rowY, listX2, rowY + ROW_H, COL_ROW_ALT);
-            graphics.drawString(this.font, trim(entries.get(index)), listX1 + 4, rowY + 3,
-                    index == selected ? COL_GOLD : COL_TEXT, false);
+            int rowY = listTop + index * ROW_STEP - scroll;
+            if (rowY + ROW_H <= listTop || rowY >= listBot) continue;
+            boolean active = index == selected;
+            UiTheme.card(g, listX1, rowY, listX2 - listX1, ROW_H, 5, index == hovered, active);
+            g.drawString(this.font, trim(entries.get(index), listX2 - listX1 - 24), listX1 + 12,
+                    rowY + 7, active ? UiTheme.ACCENT : UiTheme.TEXT);
         }
-        graphics.disableScissor();
+        g.disableScissor();
+        drawScrollbar(g, listTop, listBot, scroll, scrollMax, Math.max(1, entries.size() * ROW_STEP));
         if (entries.isEmpty()) {
-            graphics.drawString(this.font,
+            g.drawString(this.font,
                     Component.translatable("config.eternal_heart.recipe_editor.no_recipes"),
-                    listX1 + 4, listTop + 2, COL_TEXT_DIM, false);
+                    listX1 + 4, listTop + 4, UiTheme.TEXT_MUTED, false);
         }
 
-        super.render(graphics, mouseX, mouseY, partialTick);
+        drawFooterDivider(g, FOOTER_H);
+        super.render(g, mx, my, pt);
 
         // 悬停提示
-        int cell = cellAt(mouseX, mouseY);
+        int cell = cellAt(mx, my);
         if (cell >= 0 && !grid[cell].isEmpty()) {
-            graphics.renderTooltip(this.font, grid[cell].getHoverName(), mouseX, mouseY);
-        } else if (onOutput(mouseX, mouseY) && !output.isEmpty()) {
-            graphics.renderTooltip(this.font, output.getHoverName(), mouseX, mouseY);
+            g.renderTooltip(this.font, grid[cell].getHoverName(), mx, my);
+        } else if (onOutput(mx, my) && !output.isEmpty()) {
+            g.renderTooltip(this.font, output.getHoverName(), mx, my);
         }
-    }
-
-    private String trim(String text) {
-        int max = (listX2 - listX1 - 8) / 6;
-        return text.length() <= max ? text : text.substring(0, Math.max(0, max - 3)) + "...";
     }
 
     // ============================================================
@@ -275,14 +254,14 @@ public class RecipeEditorScreen extends Screen {
 
     private int rowAt(double mouseX, double mouseY) {
         if (mouseX < listX1 || mouseX > listX2 || mouseY < listTop || mouseY > listBot) return -1;
-        int index = (int) ((mouseY - listTop + scroll) / ROW_H);
+        int index = (int) ((mouseY - listTop + scroll) / ROW_STEP);
         return index >= 0 && index < entries.size() ? index : -1;
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        scrollMax = Math.max(0, entries.size() * ROW_H - (listBot - listTop));
-        scroll = (int) Math.max(0, Math.min(scrollMax, scroll - delta * ROW_H * 2));
+        scrollMax = Math.max(0, entries.size() * ROW_STEP - 6 - (listBot - listTop));
+        scroll = (int) Math.max(0, Math.min(scrollMax, scroll - delta * ROW_STEP));
         return true;
     }
 
@@ -427,6 +406,7 @@ public class RecipeEditorScreen extends Screen {
                 if (item != Items.AIR) output = new ItemStack(item);
             }
         }
+        refreshModeButtons();
         if (tagged) message("config.eternal_heart.recipe_editor.tagged");
     }
 

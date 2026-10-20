@@ -17,7 +17,10 @@ build/
 *.class
 *.jar
 !gradle/wrapper/*.jar
-!libs/*.jar
+
+# 第三方编译依赖 jar 不入库（Pehkui / Caelus / FTB Ultimine 等）
+# 克隆后需自行放入 libs/，见 README「构建 - 第三方依赖」
+libs/*.jar
 
 # OS
 .DS_Store
@@ -49,4 +52,7 @@ mianban/
 tools/
 run-gametest/
 screen.txt
-shi_ting.ogg
+
+# 反编译参考代码 / Gradle 依赖转储，不属于项目源码
+minefargo_ref/
+deps.txt

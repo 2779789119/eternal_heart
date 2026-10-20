@@ -11,6 +11,7 @@ import com.eternal_heart.features.FurySystem;
 import com.eternal_heart.features.MobilitySystem;
 import com.eternal_heart.features.OwnedEffects;
 import com.eternal_heart.features.OwnedShield;
+import com.eternal_heart.features.SurvivalSystem;
 import com.eternal_heart.features.TimeStop;
 import com.eternal_heart.features.UtilitySystem;
 import com.eternal_heart.integration.RevelationFixCompat;
@@ -42,6 +43,7 @@ import net.minecraftforge.event.entity.item.ItemTossEvent;
 import net.minecraftforge.event.entity.living.LivingDamageEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
+import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.event.entity.living.LivingEvent.LivingTickEvent;
 import net.minecraftforge.event.entity.living.LivingExperienceDropEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
@@ -85,11 +87,30 @@ public class EternalHeartEvents {
     //  每 Tick → 全模块分发
     // ============================================================
 
-    @SubscribeEvent
+    /**
+     * 每 tick → 全模块分发。
+     *
+     * <p>用 {@code LOW} 而不是默认优先级：Curios 也在 {@code LivingTickEvent} 里处理槽位变更
+     * （重算属性 + 发 {@code CurioChangeEvent}），排在它之后才能在同一 tick 内看到撤掉加成后的
+     * 新生命上限，并立刻把血量修回合法区间 —— 这是「摘下饰品暴毙」的关键时序。</p>
+     */
+    @SubscribeEvent(priority = EventPriority.LOW)
     public static void onLivingTick(LivingTickEvent event) {
         if (!(event.getEntity() instanceof Player player)) return;
 
         boolean clientSide = player.level().isClientSide();
+
+        // 兜底归还（仅服务端，常态只是两次哈希查询）：
+        // 死亡最终被其它模组取消、玩家已经复活，可备份还留着 —— 立即归还物品与饰品。
+        // 必须放在佩戴判定之前：死亡瞬间饰品已被取下，此刻「是否佩戴」正是 false，
+        // 若受它门控就永远等不到归还。
+        if (!clientSide) {
+            // 卸下守护窗口（离槽瞬间开启 40 tick）：必须跑在佩戴判定之前，
+            // 否则会先被判成「已卸下」而整段特性 tick 被跳过
+            AegisSystem.tickUnequipGuard(player);
+            AegisSystem.restoreIfPending(player);
+            CurioGuard.restoreIfPending(player);
+        }
 
         // 装备状态判定（两端都带卸下防抖）：
         // - 服务端：连续多 tick 查不到饰品才判定卸下，并在边沿分发 dispatchEquip / dispatchUnequip；
@@ -137,11 +158,14 @@ public class EternalHeartEvents {
         }
     }
 
-    /** 重生后重同步飞行能力（新实体重建，能力包需要补发）。 */
+    /** 重生后重同步飞行能力（新实体重建，能力包需要补发），并兜底归还死亡保留的备份。 */
     @SubscribeEvent
     public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             MobilitySystem.resyncFlight(player);
+            // 兜底：Clone 阶段未触发的极端情况下，重生后再归还一次（正常流程此处为空操作）
+            AegisSystem.restoreIfPending(player);
+            CurioGuard.restoreIfPending(player);
         }
     }
 
@@ -150,6 +174,9 @@ public class EternalHeartEvents {
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             MobilitySystem.resyncFlight(player);
+            // 崩溃兜底：死亡与重生之间服务器重启时，从持久化备份里把物品还回去
+            AegisSystem.restoreIfPending(player);
+            CurioGuard.restoreIfPending(player);
         }
         // 玩家上线后其佩戴的饰品纳入自动检测名单，尽快重扫
         RevelationFixCompat.scheduleScan();
@@ -186,6 +213,10 @@ public class EternalHeartEvents {
      *
      * <p>只处理「移出且玩家侧一无所获」的变更——玩家主动卸下（物品进背包 / 光标 / 掉落物）
      * 不会触发收回。</p>
+     *
+     * <p>同时在这里登记一次「卸下血量修复」：生命上限的修饰符就是在离槽这一刻被撤掉的，
+     * 而卸下判定还有 10 tick 防抖 —— 不在这里排队的话，「上限已降、血量仍是旧值」的脏值
+     * 会在整合包里被其它模组结算成 0（摘下饰品当场暴毙）。</p>
      */
     @SubscribeEvent
     public static void onCurioChange(CurioChangeEvent event) {
@@ -193,7 +224,13 @@ public class EternalHeartEvents {
         // 佩戴/卸下都会改变自动检测名单的内容，尽快重扫（防收逻辑本身只关心「被移出」）
         RevelationFixCompat.scheduleScan();
         if (!event.getTo().isEmpty()) return; // 只关心「被移出」
+        if (player.level().isClientSide()) return;
         CurioGuard.handleSlotLoss(player, event.getIdentifier(), event.getSlotIndex(), event.getFrom());
+        if (!event.getFrom().is(EternalHeartMod.ETERNAL_HEART.get())) return;
+        // 被外部夺取的饰品下一 tick 就会放回槽位：那时上限会一起恢复，
+        // 提前压血只会白掉一截，等真正「确定卸下」的路径处理
+        if (CurioGuard.isSeizePending(player)) return;
+        AegisSystem.rememberUnequip(player);
     }
 
     @SubscribeEvent
@@ -213,6 +250,16 @@ public class EternalHeartEvents {
         TimeStop.tick(event.getServer());
         // 例行扫描在线玩家佩戴的饰品（内部节流 5 秒），维持天启豁免名单自动检测
         RevelationFixCompat.scanAndSync(event.getServer());
+    }
+
+    /**
+     * 秒吃食物：佩戴者进食的使用时长压到 1 tick。
+     *
+     * <p>不限定端：客户端靠它同步「瞬间吃完」的预测动作，服务端靠它真正结算进食与饱食度。</p>
+     */
+    @SubscribeEvent
+    public static void onUseItemStart(LivingEntityUseItemEvent.Start event) {
+        SurvivalSystem.onUseItemStart(event);
     }
 
     /** 数据包重载后配方可能变化，清空熔炼结果缓存。 */
@@ -313,6 +360,35 @@ public class EternalHeartEvents {
         FeatureManager.dispatchPlayerDeath(player, event);
     }
 
+    /**
+     * 死亡结算收尾（LOWEST 优先级）：执行到这里，所有「复活类」机制的取消都已表态。
+     *
+     * <p>{@link #onPlayerDying} 必须跑在 HIGHEST —— 先把背包清空，死亡掉落才是空的、
+     * 不会被灵魂石 / 墓碑 / 收集类机制截走；但复活类模组会在<b>更晚的优先级</b>再取消死亡事件
+     *（例：MineFargo 的灵魂石、各种不死图腾）。缺少这道收尾就会出现
+     *「人复活了，可物品栏是空的、地上也没有掉落物」。</p>
+     *
+     * <p>因此这里在死亡最终没有发生时，把物品 / 经验 / 饰品原样还回去。
+     * 注意不能做「是否佩戴」判断：饰品在死亡瞬间已被取下，此刻的佩戴状态必然是 false。</p>
+     *
+     * <p>此外，真实死亡在归还之前先过一道<b>死亡兜底</b>：致死保护没拦住的致死路径
+     * （直接 {@code setHealth(0)} + {@code die()}、绕过伤害事件的实现）会在这里被
+     * {@link AegisSystem#lastStand} 强行取消，随后照常走「死亡被取消」的归还流程。</p>
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onPlayerDyingFinalize(LivingDeathEvent event) {
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (player.level().isClientSide()) return;
+
+        // 死亡兜底：已经走到收尾阶段还没被任何机制取消 → 最后一次拦截
+        if (!event.isCanceled() && !AegisSystem.lastStand(player, event)) {
+            return; // 仍然死亡：留到重生阶段归还
+        }
+
+        AegisSystem.undoDeath(player);
+        CurioGuard.undoDeath(player);
+    }
+
     @SubscribeEvent(priority = EventPriority.LOW)
     public static void onPlayerKill(LivingDeathEvent event) {
         if (!(event.getSource().getEntity() instanceof Player player)) return;
@@ -323,6 +399,40 @@ public class EternalHeartEvents {
     // ============================================================
     //  方块破坏 → 便利模块
     // ============================================================
+
+    /**
+     * 瞬挖：佩戴后任意方块 1 tick 挖穿。
+     *
+     * <p><b>两端都必须生效</b>：客户端用 {@code getDigSpeed} 决定何时发破坏包，
+     * 服务端 {@code ServerPlayerGameMode.handleBlockBreakAction} 用同一个事件判定
+     * 是否「insta mine」；只改一侧会出现「客户端挖掉了、服务端不认」的拉扯。</p>
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onBreakSpeed(PlayerEvent.BreakSpeed event) {
+        if (!ConfigValues.get(EternalHeartConfig.INSTANT_MINE)) return;
+        if (!EquipTracker.isEquipped(event.getEntity())) return;
+        UtilitySystem.applyInstantMine(event);
+    }
+
+    /**
+     * 瞬挖的工具判定：佩戴后一律按「正确工具」处理。
+     *
+     * <p>这个事件同时决定两件事：</p>
+     * <ol>
+     *   <li>挖掘进度公式里的除数（{@code 正确工具 ? 30 : 100}）——它通过
+     *       {@code player.hasCorrectToolForDrops} 读取本事件的结果；</li>
+     *   <li>服务端 {@code ServerPlayerGameMode#destroyBlock} 的 {@code canHarvestBlock}
+     *       检查——决定破坏后要不要执行 {@code playerDestroy}（也就是掉不掉东西）。</li>
+     * </ol>
+     *
+     * <p>因此这里直接置为 true：空手 / 工具不对也能像正确工具一样瞬间挖穿并正常掉落。</p>
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onHarvestCheck(PlayerEvent.HarvestCheck event) {
+        if (!ConfigValues.get(EternalHeartConfig.INSTANT_MINE)) return;
+        if (!EquipTracker.isEquipped(event.getEntity())) return;
+        event.setCanHarvest(true);
+    }
 
     @SubscribeEvent(priority = EventPriority.HIGH)
     public static void onBlockBreak(BlockEvent.BreakEvent event) {

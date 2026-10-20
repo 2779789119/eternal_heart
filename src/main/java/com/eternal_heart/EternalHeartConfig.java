@@ -35,6 +35,9 @@ public class EternalHeartConfig {
     /** 自定义属性：为任意已注册属性（含其它模组）添加修饰符，格式见配置注释。 */
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> EXTRA_ATTRIBUTES;
 
+    /** 生命上限突破：解除原版 1024 点生命上限（不再依赖 AttributeFix）。 */
+    public static final ForgeConfigSpec.BooleanValue HEALTH_CAP_OVERRIDE;
+
     // ==================== 防御系统 ====================
     public static final ForgeConfigSpec.DoubleValue DAMAGE_REDUCTION;
     public static final ForgeConfigSpec.DoubleValue FALL_DAMAGE_RATIO;
@@ -62,6 +65,16 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.BooleanValue FIRE_RESISTANCE_POTION;
     public static final ForgeConfigSpec.BooleanValue SATURATION;
     public static final ForgeConfigSpec.BooleanValue PERMANENT_LUCK;
+    public static final ForgeConfigSpec.IntValue NIGHT_VISION_LEVEL;
+    public static final ForgeConfigSpec.IntValue WATER_BREATHING_LEVEL;
+    public static final ForgeConfigSpec.IntValue SATURATION_LEVEL;
+    public static final ForgeConfigSpec.IntValue PERMANENT_LUCK_LEVEL;
+    /** 被动效果无限时长：效果永不到期（原版 -1 时长语义），不再依赖周期性刷新。 */
+    public static final ForgeConfigSpec.BooleanValue PASSIVE_EFFECT_INFINITE;
+    /** 氧气锁定：佩戴时氧气值不下降。 */
+    public static final ForgeConfigSpec.BooleanValue AIR_SUPPLY_LOCK;
+    /** 饥饿锁定：佩戴时饥饿值与饱食度不会下降。 */
+    public static final ForgeConfigSpec.BooleanValue HUNGER_LOCK;
 
     // ==================== 机动系统 ====================
     public static final ForgeConfigSpec.BooleanValue JUMP_BOOST;
@@ -70,6 +83,15 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.BooleanValue DOLPHINS_GRACE;
     public static final ForgeConfigSpec.BooleanValue LAVA_WALKING;
     public static final ForgeConfigSpec.BooleanValue WATER_WALKING;
+    public static final ForgeConfigSpec.IntValue JUMP_BOOST_LEVEL;
+    public static final ForgeConfigSpec.IntValue DOLPHINS_GRACE_LEVEL;
+    public static final ForgeConfigSpec.IntValue SLOW_FALL_GLIDE_LEVEL;
+    // ---- 内置滑翔参数（未安装 Caelus 时使用）----
+    public static final ForgeConfigSpec.DoubleValue GLIDE_START_FALL_SPEED;
+    public static final ForgeConfigSpec.DoubleValue GLIDE_FALL_DAMPING;
+    public static final ForgeConfigSpec.DoubleValue GLIDE_MAX_FALL_SPEED;
+    public static final ForgeConfigSpec.DoubleValue GLIDE_ACCELERATION;
+    public static final ForgeConfigSpec.DoubleValue GLIDE_MAX_HORIZONTAL_SPEED;
 
     // ==================== 战斗系统 ====================
     public static final ForgeConfigSpec.DoubleValue DODGE_CHANCE;
@@ -91,6 +113,25 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.IntValue IGNITE_DURATION;
     public static final ForgeConfigSpec.BooleanValue PIERCE_DAMAGE_CAP;
     public static final ForgeConfigSpec.BooleanValue PIERCE_IMMUNITY;
+    /** 溅射不再要求目标与被击目标同种生物（范围内敌对生物全部命中）。 */
+    public static final ForgeConfigSpec.BooleanValue AOE_SPLASH_ALL_TYPES;
+    public static final ForgeConfigSpec.DoubleValue KILL_CHAIN_RATIO;
+    /** 级联伤害深度上限（0 = 次级伤害不再产生新的次级伤害）。 */
+    public static final ForgeConfigSpec.IntValue CASCADE_DEPTH_LIMIT;
+    /** 无视无敌帧：我方造成的伤害不再被目标的受击无敌帧削减。 */
+    public static final ForgeConfigSpec.BooleanValue IGNORE_INVULNERABLE_TIME;
+
+    // ==================== 攻击压制 ====================
+    /** 攻击压制总开关：命中后被攻击者无法回血 / 增益被清除。 */
+    public static final ForgeConfigSpec.BooleanValue SUPPRESSION_ENABLED;
+    /** 被攻击者无法回血（禁疗）。 */
+    public static final ForgeConfigSpec.BooleanValue SUPPRESSION_ANTI_HEAL;
+    /** 禁疗持续时间（秒，每次命中刷新）。 */
+    public static final ForgeConfigSpec.IntValue SUPPRESSION_DURATION;
+    /** 命中时清除被攻击者的有益效果。 */
+    public static final ForgeConfigSpec.BooleanValue SUPPRESSION_STRIP_BENEFITS;
+    /** 是否同样压制被攻击的玩家（PvP）。 */
+    public static final ForgeConfigSpec.BooleanValue SUPPRESSION_AFFECT_PLAYERS;
 
     // ==================== 护盾系统 ====================
     public static final ForgeConfigSpec.DoubleValue SHIELD_PER_SEC;
@@ -107,12 +148,17 @@ public class EternalHeartConfig {
     // ==================== 自定义配方 ====================
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> CUSTOM_RECIPES;
 
+    /** 自定义仪式配方：Goety（诡厄巫法）暗黑祭坛仪式，格式见配置注释。 */
+    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> CUSTOM_RITUALS;
+
     // ==================== 时停 ====================
     public static final ForgeConfigSpec.BooleanValue TIME_STOP;
     public static final ForgeConfigSpec.IntValue TIME_STOP_DURATION;
     public static final ForgeConfigSpec.IntValue TIME_STOP_COOLDOWN;
     public static final ForgeConfigSpec.DoubleValue TIME_STOP_RADIUS;
     public static final ForgeConfigSpec.BooleanValue TIME_STOP_AFFECT_PLAYERS;
+    /** 时停冻结方块实体（熔炉 / 漏斗 / 刷怪笼等机器逻辑一并停止）。 */
+    public static final ForgeConfigSpec.BooleanValue TIME_STOP_FREEZE_BLOCK_ENTITIES;
 
     // ==================== 战斗生存增强 ====================
     public static final ForgeConfigSpec.BooleanValue KNOCKBACK_IMMUNITY;
@@ -132,11 +178,17 @@ public class EternalHeartConfig {
 
     // ==================== 采集强化 ====================
     public static final ForgeConfigSpec.BooleanValue AUTO_SMELT;
+    public static final ForgeConfigSpec.BooleanValue INSTANT_MINE;
+    public static final ForgeConfigSpec.BooleanValue INSTANT_MINE_UNBREAKABLE;
     public static final ForgeConfigSpec.BooleanValue VEIN_MINER;
     public static final ForgeConfigSpec.IntValue VEIN_MAX_BLOCKS;
     public static final ForgeConfigSpec.BooleanValue VEIN_USE_TAGS;
     public static final ForgeConfigSpec.IntValue FORTUNE_BONUS;
     public static final ForgeConfigSpec.IntValue LOOTING_BONUS;
+
+    // ==================== 饰品融合 ====================
+    public static final ForgeConfigSpec.BooleanValue FUSION_ENABLED;
+    public static final ForgeConfigSpec.IntValue FUSION_LIMIT;
 
     // ==================== 生存保障 ====================
     public static final ForgeConfigSpec.BooleanValue VOID_RESCUE;
@@ -147,11 +199,20 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.BooleanValue SOUL_BIND;
     public static final ForgeConfigSpec.BooleanValue ENDER_CHEST_REMOTE;
     public static final ForgeConfigSpec.BooleanValue AUTO_EXTINGUISH;
+    /** 秒吃食物：佩戴时进食几乎瞬间完成（使用时长压缩到 1 tick）。 */
+    public static final ForgeConfigSpec.BooleanValue INSTANT_EAT;
+    /** 耐久补满：周期性把背包（含盔甲 / 副手）中已损耗的耐久补回满值。 */
+    public static final ForgeConfigSpec.BooleanValue DURABILITY_REFILL;
+    public static final ForgeConfigSpec.IntValue DURABILITY_REFILL_INTERVAL;
     public static final ForgeConfigSpec.DoubleValue KILL_HEAL_RATIO;
+    /** 工具不掉耐久：佩戴时手持物品的耐久消耗被完全跳过。 */
+    public static final ForgeConfigSpec.BooleanValue ITEM_UNBREAKABLE;
 
     // ==================== 环境适应 ====================
+    public static final ForgeConfigSpec.BooleanValue MAGNET_ENABLED;
     public static final ForgeConfigSpec.DoubleValue MAGNET_RANGE;
     public static final ForgeConfigSpec.DoubleValue MAGNET_INSTANT_RANGE;
+    public static final ForgeConfigSpec.BooleanValue GLOW_ENABLED;
     public static final ForgeConfigSpec.DoubleValue GLOW_RANGE;
 
     // ==================== 光环系统 ====================
@@ -164,6 +225,17 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.DoubleValue GROWTH_AURA_CHANCE;
     public static final ForgeConfigSpec.IntValue GROWTH_AURA_MAX_BLOCKS;
     public static final ForgeConfigSpec.BooleanValue GROWTH_AUTO_REPLANT;
+    /** 凋零光环持续时间 (tick)。 */
+    public static final ForgeConfigSpec.IntValue WITHER_AURA_DURATION;
+    /** 凋零光环等级 (0 = I 级)。 */
+    public static final ForgeConfigSpec.IntValue WITHER_AURA_LEVEL;
+    /** 凋零光环/伤害光环合并触发间隔 (tick)。 */
+    public static final ForgeConfigSpec.IntValue WITHER_AURA_INTERVAL;
+    /** 生长光环垂直扫描范围 (±格)。 */
+    public static final ForgeConfigSpec.IntValue GROWTH_VERTICAL;
+    /** 和平光环周期清理：直接把范围内的敌对生物移除（不只拦截新加入）。 */
+    public static final ForgeConfigSpec.BooleanValue PEACE_AURA_CLEAN;
+    public static final ForgeConfigSpec.IntValue PEACE_AURA_CLEAN_INTERVAL;
 
     // ==================== 永怒系统 ====================
     public static final ForgeConfigSpec.IntValue FURY_MAX_STACKS;
@@ -173,6 +245,12 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.IntValue KILL_FURY_BONUS;
     public static final ForgeConfigSpec.DoubleValue LIFESTEAL_FOOD_RESTORE;
     public static final ForgeConfigSpec.DoubleValue LIFESTEAL_SATURATION_RESTORE;
+    /** 非原版暴击的补判概率 (50 = 50%)。 */
+    public static final ForgeConfigSpec.DoubleValue FURY_CRIT_CHANCE;
+    /** 暴击额外伤害加成 (10 = +10%)。 */
+    public static final ForgeConfigSpec.DoubleValue FURY_CRIT_DAMAGE_BONUS;
+    /** 强制暴击的基础倍率 (1.5 = 原版暴击倍率)。 */
+    public static final ForgeConfigSpec.DoubleValue FURY_CRIT_MULTIPLIER;
 
     // ==================== 经验 ====================
     public static final ForgeConfigSpec.DoubleValue XP_MULTIPLIER;
@@ -193,8 +271,10 @@ public class EternalHeartConfig {
 
     // ==================== 防护机制 (Aegis) ====================
     public static final ForgeConfigSpec.BooleanValue HEALTH_GUARD;
+    public static final ForgeConfigSpec.BooleanValue HEALTH_GUARD_HARD;
     public static final ForgeConfigSpec.BooleanValue MAX_HEALTH_GUARD;
     public static final ForgeConfigSpec.BooleanValue LETHAL_GUARD;
+    public static final ForgeConfigSpec.BooleanValue DEATH_GUARD;
     public static final ForgeConfigSpec.DoubleValue LETHAL_GUARD_RATIO;
     public static final ForgeConfigSpec.IntValue LETHAL_GUARD_COOLDOWN;
     public static final ForgeConfigSpec.BooleanValue KEEP_INVENTORY;
@@ -213,8 +293,37 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.BooleanValue REVELATIONFIX_AUTO_DETECT;
 
     // ==================== 渲染 ====================
-    /** 碎片渲染总开关（默认开）。关闭后完全退回模组原版：不画碎片、提示框照常显示。 */
-    public static final ForgeConfigSpec.BooleanValue SHARD_VEIL;
+
+    // ==================== 头顶光环 ====================
+    /** 头顶光环：佩戴「永恒之心」时在玩家头顶绘制一圈悬浮光环（纯客户端表现，不影响数值）。 */
+    public static final ForgeConfigSpec.BooleanValue HALO_ENABLED;
+    public static final ForgeConfigSpec.DoubleValue HALO_RADIUS;
+    public static final ForgeConfigSpec.DoubleValue HALO_HEIGHT;
+    public static final ForgeConfigSpec.DoubleValue HALO_THICKNESS;
+    public static final ForgeConfigSpec.IntValue HALO_COLOR;
+    public static final ForgeConfigSpec.DoubleValue HALO_SPIN_SPEED;
+    /** 彩虹光环：颜色沿环周向铺成彩虹并随时间流动（开启后「光环颜色」被忽略）。 */
+    public static final ForgeConfigSpec.BooleanValue HALO_RAINBOW;
+    /** 彩虹流动速度（圈/秒，0 = 只保留静态彩虹不流动）。 */
+    public static final ForgeConfigSpec.DoubleValue HALO_RAINBOW_SPEED;
+    /** 彩虹色带条数：整数圈。0 = 整环同色、只随时间变色；1 = 一周铺满一整圈色相。 */
+    public static final ForgeConfigSpec.IntValue HALO_RAINBOW_BANDS;
+
+    // ==================== 环绕光球 ====================
+    /** 光球模式：把头顶圆环换成环绕玩家中点的若干光球。 */
+    public static final ForgeConfigSpec.BooleanValue HALO_ORBS;
+    public static final ForgeConfigSpec.IntValue HALO_ORB_COUNT;
+    /** 光球轨道半径：每个球到玩家中点（轨道球心）的水平距离，与圆环样式的「光环半径」互相独立。 */
+    public static final ForgeConfigSpec.DoubleValue HALO_ORB_RADIUS;
+    public static final ForgeConfigSpec.DoubleValue HALO_ORB_SIZE;
+    public static final ForgeConfigSpec.DoubleValue HALO_ORB_HEIGHT;
+    public static final ForgeConfigSpec.DoubleValue HALO_ORB_TILT;
+    public static final ForgeConfigSpec.IntValue HALO_ORB_TRAIL;
+
+    /** 炫彩提示框：名字与全部说明文字按彩虹色逐字渐变并流动。 */
+    public static final ForgeConfigSpec.BooleanValue RAINBOW_NAME;
+    /** 炫彩文字的色相流动速度（圈/秒）。 */
+    public static final ForgeConfigSpec.DoubleValue RAINBOW_NAME_SPEED;
 
     public static final ForgeConfigSpec SPEC;
 
@@ -256,6 +365,10 @@ public class EternalHeartConfig {
                 // 元素校验放宽到「任意字符串」：非法条目由解析层忽略，
                 // 避免手改 toml 写错一个字符就让整份配置加载失败
                 .defineList("extraAttributes", () -> List.of(), o -> o instanceof String);
+        HEALTH_CAP_OVERRIDE = BUILDER.comment(
+                        "生命上限突破 - 解除原版 1024 点生命上限（原版 MAX_HEALTH 属性被硬夹在 1024，",
+                        "超出部分会被丢弃；开启后不再需要 AttributeFix 也能把最大生命堆到任意值）")
+                .define("healthCapOverride", true);
         BUILDER.pop();
 
         BUILDER.push("防御系统 (Defense)");
@@ -287,6 +400,16 @@ public class EternalHeartConfig {
         FIRE_RESISTANCE_POTION = BUILDER.comment("永久抗火药水效果").define("fireResistancePotion", true);
         SATURATION = BUILDER.comment("永久饱和 (不消耗饥饿值)").define("saturation", true);
         PERMANENT_LUCK = BUILDER.comment("永久幸运药水效果").define("permanentLuck", true);
+        NIGHT_VISION_LEVEL = BUILDER.comment("夜视等级 (0 = I 级, 1 = II 级…)").defineInRange("nightVisionLevel", 0, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        WATER_BREATHING_LEVEL = BUILDER.comment("水下呼吸等级 (0 = I 级, 1 = II 级…)").defineInRange("waterBreathingLevel", 0, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        SATURATION_LEVEL = BUILDER.comment("饱和等级 (0 = I 级, 1 = II 级…)").defineInRange("saturationLevel", 0, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        PERMANENT_LUCK_LEVEL = BUILDER.comment("幸运等级 (0 = I 级, 1 = II 级…)").defineInRange("permanentLuckLevel", 0, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        PASSIVE_EFFECT_INFINITE = BUILDER.comment(
+                        "被动效果无限时长 - 我方维持的被动药水效果使用原版无限时长（永不到期），",
+                        "不再依赖周期性刷新，也不会被「效果时长削减」类机制中断；关闭则回到固定时长 + 自动刷新")
+                .define("passiveEffectInfinite", true);
+        AIR_SUPPLY_LOCK = BUILDER.comment("氧气锁定 - 佩戴时氧气值不会下降（等同永久水下呼吸，但不受效果清除影响）").define("airSupplyLock", true);
+        HUNGER_LOCK = BUILDER.comment("饥饿锁定 - 佩戴时饥饿值与饱食度不再下降（不管多高强度的消耗都保持满值）").define("hungerLock", true);
         BUILDER.pop();
 
         BUILDER.push("机动系统 (Mobility)");
@@ -296,6 +419,19 @@ public class EternalHeartConfig {
         DOLPHINS_GRACE = BUILDER.comment("海豚的恩惠 - 水中加速游泳").define("dolphinsGrace", true);
         LAVA_WALKING = BUILDER.comment("熔岩行走").define("lavaWalking", true);
         WATER_WALKING = BUILDER.comment("水上行走 - 站在水面，潜行允许下潜").define("waterWalking", true);
+        JUMP_BOOST_LEVEL = BUILDER.comment("跳跃提升等级 (0 = 跳跃提升 I，即 +100%；1 = II…)").defineInRange("jumpBoostLevel", 0, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        DOLPHINS_GRACE_LEVEL = BUILDER.comment("海豚的恩惠等级 (0 = I 级…)").defineInRange("dolphinsGraceLevel", 0, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        SLOW_FALL_GLIDE_LEVEL = BUILDER.comment("缓降滑翔的效果等级 (0 = 缓降 I…)").defineInRange("slowFallGlideLevel", 0, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        GLIDE_START_FALL_SPEED = BUILDER.comment("内置滑翔·起滑阈值 - 下落速度低于此值（自由落体）时自动进入滑翔 (格/tick，默认 -0.6)")
+                .defineInRange("glideStartFallSpeed", -0.6, -Double.MAX_VALUE, Double.MAX_VALUE);
+        GLIDE_FALL_DAMPING = BUILDER.comment("内置滑翔·下落阻尼 - 每 tick 下落速度乘以该系数，越小平滑得越快 (默认 0.7)")
+                .defineInRange("glideFallDamping", 0.7, -Double.MAX_VALUE, Double.MAX_VALUE);
+        GLIDE_MAX_FALL_SPEED = BUILDER.comment("内置滑翔·最大下落速度 (格/tick，默认 -0.22；填 0 可悬浮不落)")
+                .defineInRange("glideMaxFallSpeed", -0.22, -Double.MAX_VALUE, Double.MAX_VALUE);
+        GLIDE_ACCELERATION = BUILDER.comment("内置滑翔·沿视角加速度 (格/tick²，默认 0.06)")
+                .defineInRange("glideAcceleration", 0.06, -Double.MAX_VALUE, Double.MAX_VALUE);
+        GLIDE_MAX_HORIZONTAL_SPEED = BUILDER.comment("内置滑翔·水平速度上限 (格/tick，默认 1.1；≤0 = 不限制，可无限加速)")
+                .defineInRange("glideMaxHorizontalSpeed", 1.1, -Double.MAX_VALUE, Double.MAX_VALUE);
         BUILDER.pop();
 
         BUILDER.push("战斗系统 (Combat)");
@@ -318,6 +454,38 @@ public class EternalHeartConfig {
         IGNITE_DURATION = BUILDER.comment("点燃持续时间 (秒)").defineInRange("igniteDuration", 3, Integer.MIN_VALUE, Integer.MAX_VALUE);
         PIERCE_DAMAGE_CAP = BUILDER.comment("突破限伤 - 最终结算阶段把伤害恢复为我方期望值：其它模组的单次伤害上限（限伤）会被突破。","注意：期望值是护甲结算前的数值，因此开启后同时会穿透目标护甲 / 抗性 / 吸收的减伤；只提升不压低，其它模组的合法增伤不受影响").define("pierceDamageCap", true);
         PIERCE_IMMUNITY = BUILDER.comment("突破免伤 - 目标用「取消伤害事件」完全免疫时改用真实伤害直接扣血（仅对非玩家目标生效；会无视 BOSS 无敌阶段与不死图腾）").define("pierceImmunity", false);
+        AOE_SPLASH_ALL_TYPES = BUILDER.comment(
+                        "溅射·不分种类 - 开启后溅射命中范围内全部敌对生物；",
+                        "关闭则退回旧行为（只打与被击目标同种生物）").define("aoeSplashAllTypes", true);
+        KILL_CHAIN_RATIO = BUILDER.comment("击杀连锁伤害比例 - 以被击杀者最大生命值计算 (50 = 50%)").defineInRange("killChainRatio", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
+        CASCADE_DEPTH_LIMIT = BUILDER.comment(
+                        "级联伤害深度上限 - 溅射 / 连锁产生的伤害是否允许再产生溅射 / 连锁：",
+                        "0 = 不允许（旧行为，最安全）；1 = 允许一层；上限 8 防止怪群无限递归把主线程卡死")
+                .defineInRange("cascadeDepthLimit", 1, 0, 8);
+        IGNORE_INVULNERABLE_TIME = BUILDER.comment(
+                        "无视无敌帧 - 我方造成的每次打击都不被目标的受击无敌帧（10 tick）削减或吞掉，",
+                        "光环、溅射、反伤、连击类能力因此能全额结算（对玩家自身受击无效）")
+                .define("ignoreInvulnerableTime", true);
+        BUILDER.pop();
+
+        BUILDER.push("攻击压制 (Suppression)");
+        SUPPRESSION_ENABLED = BUILDER.comment(
+                        "攻击压制 - 总开关：命中后被攻击者无法回血、增益被清除",
+                        "关闭后下面两项都不再生效（不影响「剥离增益效果」开关）")
+                .define("suppressionEnabled", true);
+        SUPPRESSION_ANTI_HEAL = BUILDER.comment(
+                        "被攻击者禁疗 - 命中的目标在持续时间内无法回血",
+                        "拦截范围：生命回复 / 再生药水 / 治疗药水与金苹果 / 自然恢复 / 命令与其它模组的直接加血",
+                        "对「效果免疫」的生物同样生效（不会因为对方免疫药水效果就失效）")
+                .define("suppressionAntiHeal", true);
+        SUPPRESSION_DURATION = BUILDER.comment("禁疗持续时间 (秒，每次命中刷新；0 = 不施加禁疗)")
+                .defineInRange("suppressionDuration", 5, Integer.MIN_VALUE, 1000000);
+        SUPPRESSION_STRIP_BENEFITS = BUILDER.comment("被攻击者清除增益 - 每次命中移除目标身上全部有益效果")
+                .define("suppressionStripBenefits", true);
+        SUPPRESSION_AFFECT_PLAYERS = BUILDER.comment(
+                        "对玩家生效 - 是否同样压制被攻击的玩家",
+                        "默认关闭：联机里若双方都佩戴，会互相禁疗到谁都回不了血")
+                .define("suppressionAffectPlayers", false);
         BUILDER.pop();
 
         BUILDER.push("护盾系统 (Shield)");
@@ -351,11 +519,18 @@ public class EternalHeartConfig {
 
         BUILDER.push("采集强化 (Harvesting)");
         AUTO_SMELT = BUILDER.comment("自动冶炼 - 挖矿直接掉落锭").define("autoSmelt", true);
+        INSTANT_MINE = BUILDER.comment("瞬挖 - 佩戴后任意方块只需 1 tick 即可挖穿，工具判定恒为正确工具（空手 / 工具不对也能正常掉落）").define("instantMine", true);
+        INSTANT_MINE_UNBREAKABLE = BUILDER.comment("瞬挖·破不可破坏方块 - 允许挖穿硬度 -1 的方块（基岩 / 屏障 / 命令方块 / 结构方块等）；关闭则这些方块恢复不可破坏。出生点保护与领地限制仍然生效").define("instantMineUnbreakable", true);
         VEIN_MINER = BUILDER.comment("连锁挖掘 - 一键挖光同种矿脉").define("veinMiner", true);
         VEIN_MAX_BLOCKS = BUILDER.comment("连锁挖掘最大方块数 (上限 65536，再大等于让服务器长时间阻塞)").defineInRange("veinMaxBlocks", 64, Integer.MIN_VALUE, 65536);
         VEIN_USE_TAGS = BUILDER.comment("使用 forge:ores 标签识别矿石 (支持所有模组矿石)").define("veinUseTags", true);
         FORTUNE_BONUS = BUILDER.comment("矿石额外掉落补判次数 (每次 33% 概率复制一份，不是原版时运等级；上限 1000)").defineInRange("fortuneBonus", 3, Integer.MIN_VALUE, 1000);
         LOOTING_BONUS = BUILDER.comment("额外抢夺等级 (加到武器抢夺上；上限 1000)").defineInRange("lootingBonus", 3, Integer.MIN_VALUE, 1000);
+        BUILDER.pop();
+
+        BUILDER.push("饰品融合 (Fusion)");
+        FUSION_ENABLED = BUILDER.comment("饰品融合 - 允许在工作台把永恒之心与其它饰品合成，继承其属性与 Curios 回调能力（攻击/生命等属性、每 tick 效果、装备时效果、时运/抢夺等）").define("fusionEnabled", true);
+        FUSION_LIMIT = BUILDER.comment("饰品融合上限 - 永恒之心最多融合多少个饰品 (0 = 禁止融合)").defineInRange("fusionLimit", 16, 0, 256);
         BUILDER.pop();
 
         BUILDER.push("自定义配方 (Custom Recipes)");
@@ -372,12 +547,33 @@ public class EternalHeartConfig {
                 .defineList("customRecipes", () -> List.of(), o -> o instanceof String);
         BUILDER.pop();
 
+        BUILDER.push("自定义仪式配方 (Custom Rituals)");
+        CUSTOM_RITUALS = BUILDER.comment(
+                        "自定义仪式配方 - 诡厄巫法（Goety）暗黑祭坛仪式，一行一条，键值对形式（分号分隔）",
+                        "  ritual: result=<产出>[ xN]; activation=<激活物>; ingredients=<材料>[ xN] [+ <材料>…]",
+                        "          [; type=<goety:craft|summon|convert|enchant|…>] [; craft=<流派>] [; soul=<灵魂>] [; time=<秒>]",
+                        "          [; summon=<实体ID>] [; summon_life=<tick>] [; convert=<实体tag>] [; convert_into=<实体ID>]",
+                        "          [; enchant=<附魔ID>] [; xp=<经验等级>] [; research=<研究>] [; group=<分组>]",
+                        "          [; sacrifice=<需献祭的实体tag>] [; sacrifice_name=<献祭显示名>]  （献祭为空则不要求）",
+                        "  默认: type=goety:craft、craft 空、soul=0、time=30；非合成类（召唤/转换等）省略 result 时自动填占位物品",
+                        "  材料与激活物 ID 可省略 minecraft: 前缀；# 开头表示标签（如 #forge:gems/prismarine）",
+                        "  原版 JSON: {…}                                     （复杂仪式仍可直接粘贴 Goety 的完整 JSON）",
+                        "示例: 'ritual: result=goety:abyss_crown; activation=goety:wild_crown; ingredients=4x #forge:dusts/prismarine + 4x #forge:gems/prismarine; craft=deep; soul=1; time=10'",
+                        "该功能软依赖 Goety：未安装时条目会被忽略；安装后随服务器启动自动注入",
+                        "改动后可执行 /eternalheart recipe reload 立即生效")
+                .defineList("customRituals", () -> List.of(), o -> o instanceof String);
+        BUILDER.pop();
+
         BUILDER.push("时停 (Time Stop)");
         TIME_STOP = BUILDER.comment("时停开关 (使用快捷键或命令触发，冻结范围内除自己以外的实体)").define("timeStop", true);
         TIME_STOP_DURATION = BUILDER.comment("时停持续时间 (秒)").defineInRange("timeStopDuration", 5, Integer.MIN_VALUE, Integer.MAX_VALUE);
         TIME_STOP_COOLDOWN = BUILDER.comment("时停冷却 (秒)").defineInRange("timeStopCooldown", 30, Integer.MIN_VALUE, Integer.MAX_VALUE);
         TIME_STOP_RADIUS = BUILDER.comment("时停半径 (格，0 = 整个维度)").defineInRange("timeStopRadius", 0.0, -Double.MAX_VALUE, 512.0);
         TIME_STOP_AFFECT_PLAYERS = BUILDER.comment("是否连其它玩家一起冻结 (自己永远不受影响)").define("timeStopAffectPlayers", false);
+        TIME_STOP_FREEZE_BLOCK_ENTITIES = BUILDER.comment(
+                        "时停·冻结方块实体 - 熔炉 / 漏斗 / 刷怪笼 / 各类机器在时停期间一并停止工作",
+                        "（旧行为只冻结实体移动，方块的机器逻辑照常运行）")
+                .define("timeStopFreezeBlockEntities", true);
         BUILDER.pop();
 
         BUILDER.push("冷却缩减 (Cooldown)");
@@ -397,12 +593,29 @@ public class EternalHeartConfig {
         SOUL_BIND = BUILDER.comment("灵魂绑定 - 死亡不掉落物品（软死亡：复活时传送到出生点）").define("soulBind", true);
         ENDER_CHEST_REMOTE = BUILDER.comment("便携末影箱 - 潜行+右键空气打开末影箱").define("enderChestRemote", true);
         AUTO_EXTINGUISH = BUILDER.comment("自动灭火 - 着火时立即熄灭；药水抗火由独立开关控制").define("autoExtinguish", true);
+        INSTANT_EAT = BUILDER.comment(
+                        "秒吃食物 - 佩戴时进食几乎瞬间完成（使用时长压缩到 1 tick，约 0.05 秒）",
+                        "进食期间不再有持续减速；药水 / 弓 / 盾牌等其它使用类物品不受影响")
+                .define("instantEat", true);
+        DURABILITY_REFILL = BUILDER.comment(
+                        "耐久补满 - 佩戴时定期把背包里已损耗的物品耐久直接补回满值",
+                        "（覆盖主背包 / 盔甲 / 副手；与「工具不掉耐久」互补：那个只阻止新损耗，",
+                        "这里负责把佩戴前已经磨掉的耐久补回来，两者可独立开关）")
+                .define("durabilityRefill", true);
+        DURABILITY_REFILL_INTERVAL = BUILDER.comment("耐久补满间隔 (秒，0 = 每 tick 检查)")
+                .defineInRange("durabilityRefillInterval", 1, Integer.MIN_VALUE, Integer.MAX_VALUE);
         KILL_HEAL_RATIO = BUILDER.comment("击杀时恢复最大生命值比例").defineInRange("killHealRatio", 0.2, -Double.MAX_VALUE, Double.MAX_VALUE);
+        ITEM_UNBREAKABLE = BUILDER.comment(
+                        "工具不掉耐久 - 佩戴时手持物品的耐久消耗被完全跳过",
+                        "（挖掘 / 攻击 / 自动钓鱼 / 连锁挖矿都不再磨损，附魔与属性照常生效）")
+                .define("itemUnbreakable", true);
         BUILDER.pop();
 
         BUILDER.push("环境适应 (Adaptation)");
+        MAGNET_ENABLED = BUILDER.comment("物品磁铁开关 (关闭后「物品磁铁范围」与「磁铁瞬吸范围」一并停用，范围设置保留)").define("magnetEnabled", true);
         MAGNET_RANGE = BUILDER.comment("物品磁铁范围 (格，0 = 关闭；上限 512 为引擎安全值)").defineInRange("magnetRange", 8.0, -Double.MAX_VALUE, 512.0);
         MAGNET_INSTANT_RANGE = BUILDER.comment("物品即时捡取范围 - 此范围内物品直接进入背包 (格；上限 512)").defineInRange("magnetInstantRange", 2.0, -Double.MAX_VALUE, 512.0);
+        GLOW_ENABLED = BUILDER.comment("生物发光侦测开关 (关闭后「生物发光侦测范围」停用，范围设置保留)").define("glowEnabled", true);
         GLOW_RANGE = BUILDER.comment("生物发光侦测范围 (格，0 = 关闭；上限 512 为引擎安全值)").defineInRange("glowRange", 24.0, -Double.MAX_VALUE, 512.0);
         BUILDER.pop();
 
@@ -416,6 +629,15 @@ public class EternalHeartConfig {
         GROWTH_AURA_CHANCE = BUILDER.comment("生长光环单次骨粉成功率 (50 = 50%，100 = 必定尝试)").defineInRange("growthAuraChance", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
         GROWTH_AURA_MAX_BLOCKS = BUILDER.comment("生长光环每周期最大催熟方块数 (上限 4096)").defineInRange("growthAuraMaxBlocks", 10, Integer.MIN_VALUE, 4096);
         GROWTH_AUTO_REPLANT = BUILDER.comment("自动补种 - 收获成熟作物后自动重新种植").define("growthAutoReplant", true);
+        WITHER_AURA_DURATION = BUILDER.comment("凋零光环·持续时间 (tick，默认 60)").defineInRange("witherAuraDuration", 60, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        WITHER_AURA_LEVEL = BUILDER.comment("凋零光环·等级 (0 = 凋零 I，1 = 凋零 II…)").defineInRange("witherAuraLevel", 1, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        WITHER_AURA_INTERVAL = BUILDER.comment("凋零光环·触发间隔 (tick，默认 20；越小越频繁)").defineInRange("witherAuraInterval", 20, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        GROWTH_VERTICAL = BUILDER.comment("生长光环·垂直扫描范围 (±格)").defineInRange("growthVertical", 3, 0, 64);
+        PEACE_AURA_CLEAN = BUILDER.comment(
+                        "和平光环·周期清理 - 不只拦截新加入的敌对生物，",
+                        "还定期把范围内的敌对生物直接移除（不留尸体、不掉落）")
+                .define("peaceAuraClean", true);
+        PEACE_AURA_CLEAN_INTERVAL = BUILDER.comment("和平光环·清理间隔 (tick)").defineInRange("peaceAuraCleanInterval", 40, 1, Integer.MAX_VALUE);
         BUILDER.pop();
 
         BUILDER.push("永怒系统 (Eternal Fury)");
@@ -426,6 +648,12 @@ public class EternalHeartConfig {
         KILL_FURY_BONUS = BUILDER.comment("击杀额外永怒层数").defineInRange("killFuryBonus", 3, Integer.MIN_VALUE, Integer.MAX_VALUE);
         LIFESTEAL_FOOD_RESTORE = BUILDER.comment("生命窃取时恢复饱食度 (每次窃取)").defineInRange("lifestealFoodRestore", 1.0, -Double.MAX_VALUE, Double.MAX_VALUE);
         LIFESTEAL_SATURATION_RESTORE = BUILDER.comment("生命窃取时恢复饱和度 (每次窃取)").defineInRange("lifestealSaturationRestore", 2.0, -Double.MAX_VALUE, Double.MAX_VALUE);
+        FURY_CRIT_CHANCE = BUILDER.comment("非原版暴击补判概率 (50 = 50%，0 = 关闭；原版暴击条件与判定不变)")
+                .defineInRange("furyCritChance", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
+        FURY_CRIT_DAMAGE_BONUS = BUILDER.comment("暴击额外伤害加成 (10 = +10%，叠加在原版 1.5 倍之上)")
+                .defineInRange("furyCritDamageBonus", 0.10, -Double.MAX_VALUE, Double.MAX_VALUE);
+        FURY_CRIT_MULTIPLIER = BUILDER.comment("强制暴击的基础倍率 (1.5 = 原版暴击倍率；调高即「必爆 + 高倍暴击」)")
+                .defineInRange("furyCritMultiplier", 1.5, -Double.MAX_VALUE, Double.MAX_VALUE);
         BUILDER.pop();
 
         BUILDER.push("经验 (Experience)");
@@ -450,8 +678,10 @@ public class EternalHeartConfig {
 
         BUILDER.push("防护机制 (Aegis)");
         HEALTH_GUARD = BUILDER.comment("血量防篡改 - 拦截非伤害途径的生命值削减并立即回滚（防止被其它模组/机制强行改血）").define("healthGuard", true);
+        HEALTH_GUARD_HARD = BUILDER.comment("血量硬锁 - 在 setHealth 层直接拒绝未经伤害管线的降血（零窗口，不再依赖每 tick 回滚；关闭则退回审计+回滚模式）").define("healthGuardHard", true);
         MAX_HEALTH_GUARD = BUILDER.comment("生命上限保护 - 佩戴后最大生命值不会被削减（防止被偷取/封印生命上限）").define("maxHealthGuard", true);
         LETHAL_GUARD = BUILDER.comment("致死保护 - 单次致命伤害不会直接击杀，改为保留一定比例生命（防秒杀 / 防被收）").define("lethalGuard", true);
+        DEATH_GUARD = BUILDER.comment("死亡兜底 - 致死保护没拦住时（直接 die / 绕过伤害管线）在死亡结算阶段强行取消死亡，保留致死保护比例的生命；与致死保护共享冷却").define("deathGuard", true);
         LETHAL_GUARD_RATIO = BUILDER.comment("致死保护保留生命比例 (15 = 保留最大生命的 15%，最低保留 1 点；≥100 等于免疫致命伤)").defineInRange("lethalGuardRatio", 0.15, -Double.MAX_VALUE, Double.MAX_VALUE);
         LETHAL_GUARD_COOLDOWN = BUILDER.comment("致死保护冷却 (tick，冷却期间不再触发；0 = 无冷却)").defineInRange("lethalGuardCooldown", 600, Integer.MIN_VALUE, Integer.MAX_VALUE);
         KEEP_INVENTORY = BUILDER.comment("死亡保留物品 - 死亡时物品栏不掉落，重生后原样归还（防止掉落物被收走）").define("keepInventory", true);
@@ -486,11 +716,76 @@ public class EternalHeartConfig {
         BUILDER.pop();
 
         BUILDER.push("渲染 (Rendering)");
-        SHARD_VEIL = BUILDER.comment(
-                        "碎片渲染 - 永恒之心的碎片环绕特效（拿在手上 / 戴在饰品栏时出现的碎片动画与悬停聚合面板）。",
-                        "关闭后完全恢复模组原版表现：碎片不再渲染，物品提示框照常直接显示",
-                        "（背包里悬停即见，无需按住 Shift；世界中也不再弹出碎片面板）。")
-                .define("shardVeil", true);
+        HALO_ENABLED = BUILDER.comment(
+                        "头顶光环 - 佩戴「永恒之心」时在头顶绘制一圈悬浮光环（第三人称 / 其他玩家均可见）。",
+                        "纯客户端表现，不影响任何数值；关闭后立即消失。")
+                .define("haloEnabled", true);
+        HALO_RADIUS = BUILDER.comment("光环半径 (格，0.1 ~ 3.0；0.6 约为头顶大半身位)")
+                .defineInRange("haloRadius", 0.6, 0.05, 3.0);
+        HALO_HEIGHT = BUILDER.comment(
+                        "光环离脚底的高度 (格，玩家身高 1.8；填负值可把光环压到肩膀 / 头部位置)",
+                        "0 = 与脚底同高；圆环样式一般配合较大的半径使用")
+                .defineInRange("haloHeight", 0.0, -1.0, 4.0);
+        HALO_THICKNESS = BUILDER.comment("光环圆环的粗细 (格，0.02 ~ 0.4；越大越像实心圆环)")
+                .defineInRange("haloThickness", 0.06, 0.01, 0.4);
+        HALO_COLOR = BUILDER.comment(
+                        "光环颜色 - RGB 十进制整数（十六进制转十进制即可，例如金色 0xFFD54A = 16766282）。",
+                        "面板里直接填十进制数值；16711680=红、65280=绿、255=蓝、16777215=白")
+                .defineInRange("haloColor", 0xFFD54A, 0, 0xFFFFFF);
+        HALO_SPIN_SPEED = BUILDER.comment("光环自转速度 (度/秒，0 = 静止不旋转)")
+                .defineInRange("haloSpinSpeed", 45.0, -720.0, 720.0);
+        HALO_RAINBOW = BUILDER.comment(
+                        "彩虹光环 - 颜色沿光环周向铺成彩虹并缓缓流动（多彩变换），",
+                        "相当于在光环上放了一条永远转不完的彩虹带。",
+                        "开启后「光环颜色」被忽略；关掉则回到固定单色。")
+                .define("haloRainbow", true);
+        HALO_RAINBOW_SPEED = BUILDER.comment(
+                        "彩虹流动速度 (圈/秒，0 = 只保留静态彩虹不流动；负值反向流动)",
+                        "注意这是「颜色沿环流动」，与上面的「自转速度」是两回事，可各调各的")
+                .defineInRange("haloRainbowSpeed", 0.15, -5.0, 5.0);
+        HALO_RAINBOW_BANDS = BUILDER.comment(
+                        "彩虹色带条数（整数圈）：0 = 整环同色、颜色只随时间整体变化；",
+                        "1 = 光环一周正好铺满一整圈色相（红橙黄绿蓝紫各占一段，推荐）；",
+                        "2 / 3 = 一周铺两圈 / 三圈彩虹，色带更密；",
+                        "必须是整数 —— 填小数会让色环首尾接不上，出现一条明显的颜色硬边；",
+                        "条数越多每段跨度越大，超过 4 条开始能看出色阶，1 ~ 2 条最顺眼")
+                .defineInRange("haloRainbowBands", 1, 0, 12);
+        HALO_ORBS = BUILDER.comment(
+                        "光球模式 - 把头顶的圆环光环换成「环绕光球」：若干发光球均匀分布在一个",
+                        "以玩家中点为球心的圆轨道上整体自转（默认 5 个）。",
+                        "颜色 / 彩虹 / 自转速度与圆环样式共用；半径、高度、倾角、大小各自独立。",
+                        "关闭本项即回到圆环样式，此时「光环高度」「光环粗细」等才会重新生效。")
+                .define("haloOrbs", true);
+        HALO_ORB_COUNT = BUILDER.comment("光球数量 (1 ~ 8，均匀分布在同一条轨道上)")
+                .defineInRange("haloOrbCount", 5, 1, 8);
+        HALO_ORB_RADIUS = BUILDER.comment(
+                        "光球轨道半径 (格) —— 每个球到轨道球心（玩家中点）的水平距离。",
+                        "0.6 约为头顶大半身位；想让球离身体更远 / 更贴身就调这里。",
+                        "与圆环样式的「光环半径」互相独立，改这里不会影响圆环。")
+                .defineInRange("haloOrbRadius", 0.6, 0.05, 3.0);
+        HALO_ORB_SIZE = BUILDER.comment("单个光球的半径 (格；光球外还有一层约 1.8 倍大的柔光)")
+                .defineInRange("haloOrbSize", 0.1, 0.04, 0.4);
+        HALO_ORB_HEIGHT = BUILDER.comment(
+                        "光球轨道的球心高度 (相对脚底，格) —— 就是「以玩家中点为球心」的那个球心。",
+                        "玩家身高 1.8，0.9 即身体正中，1.2 略高于身体正中；",
+                        "想让球环绕腰部填 0.9 左右，环绕头部填 1.5 以上")
+                .defineInRange("haloOrbHeight", 1.2, -1.0, 4.0);
+        HALO_ORB_TILT = BUILDER.comment(
+                        "轨道倾斜角 (度，0 = 水平环绕，正负决定往哪一侧倾斜)",
+                        "倾斜后从侧面看球会前后错落，更接近「环绕身体」的观感")
+                .defineInRange("haloOrbTilt", -40.0, -90.0, 90.0);
+        HALO_ORB_TRAIL = BUILDER.comment(
+                        "光球拖影 - 每个球身后跟随几级渐小渐淡的光痕 (0 = 关闭；球越多 / 越大，拖影越显眼)。",
+                        "拖影方向自动跟随自转方向；自转速度为 0 时拖影与球重合，看不出多余的东西。")
+                .defineInRange("haloOrbTrail", 5, 0, 8);
+        RAINBOW_NAME = BUILDER.comment(
+                        "炫彩提示框 - 「永恒之心」提示框里的物品名与全部说明文字按彩虹色逐字渐变，并随时间流动。",
+                        "纯客户端显示效果：不改动物品名本身，也不会出现在聊天 / 掉落物标签里。")
+                .define("rainbowName", true);
+        RAINBOW_NAME_SPEED = BUILDER.comment(
+                        "炫彩文字的色相流动速度 (圈/秒，0 = 静止彩虹不再流动；负值反向流动)",
+                        "每个字符推进固定色相步长，整段提示框连成一条流动的彩虹")
+                .defineInRange("rainbowNameSpeed", 0.25, -5.0, 5.0);
         BUILDER.pop();
 
         SPEC = BUILDER.build();
