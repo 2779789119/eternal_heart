@@ -56,3 +56,5 @@ screen.txt
 # 反编译参考代码 / Gradle 依赖转储，不属于项目源码
 minefargo_ref/
 deps.txt
+
+mod/

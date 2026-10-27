@@ -7,6 +7,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.loading.FMLPaths;
@@ -59,6 +60,8 @@ public final class RevelationFixCompat {
     private static long lastScanTick = -SCAN_INTERVAL;   // 修复：原为 Long.MIN_VALUE，tick - lastScanTick 首 tick 即溢出为负，导致定期扫描永不触发
     private static boolean lastWanted = false;
     private static boolean lastAutoDetect = false;
+    private static boolean lastGuardEquipment = false;
+    private static boolean lastGuardInventory = false;
 
     private RevelationFixCompat() {
     }
@@ -202,23 +205,61 @@ public final class RevelationFixCompat {
 
         boolean wanted = ConfigValues.get(EternalHeartConfig.REVELATIONFIX_WHITELIST);
         boolean autoDetect = ConfigValues.get(EternalHeartConfig.REVELATIONFIX_AUTO_DETECT);
-        Set<String> detected = autoDetect ? scanWornCurios(server) : Set.of();
+        // 装备防收 / 物品防收：两个独立的可选扫描源，未开启时集合为空
+        boolean guardEquipment = ConfigValues.get(EternalHeartConfig.REVELATIONFIX_GUARD_EQUIPMENT);
+        boolean guardInventory = ConfigValues.get(EternalHeartConfig.REVELATIONFIX_GUARD_INVENTORY);
+        Set<String> detected = new TreeSet<>();
+        if (wanted) {
+            if (autoDetect) detected.addAll(scanWornCurios(server));
+            if (guardEquipment) detected.addAll(scanWornEquipment(server));
+            if (guardInventory) detected.addAll(scanInventory(server));
+        }
 
-        // 开关状态与佩戴集合都没变 → 不动配置文件
-        if (!force && wanted == lastWanted && autoDetect == lastAutoDetect && detected.equals(lastAuto)) return;
+        // 开关状态与检测集合都没变 → 不动配置文件
+        if (!force && wanted == lastWanted && autoDetect == lastAutoDetect
+                && guardEquipment == lastGuardEquipment && guardInventory == lastGuardInventory
+                && detected.equals(lastAuto)) return;
         lastWanted = wanted;
         lastAutoDetect = autoDetect;
+        lastGuardEquipment = guardEquipment;
+        lastGuardInventory = guardInventory;
 
         List<? extends String> extras = ConfigValues.get(EternalHeartConfig.REVELATIONFIX_EXTRA_ITEMS);
         if (!wanted) {
             // 总开关关闭：清掉我们写入的一切（含残留自动条目）
             sync(false, extras, List.of());
-        } else if (autoDetect) {
-            sync(true, extras, new ArrayList<>(detected));
         } else {
-            // 自动检测关闭：固定 + 自定义条目照常维护，自动条目清空
-            sync(true, extras, List.of());
+            // 总开关打开：固定 + 自定义 + 本次检测到的条目一起维护（未开启的检测源集合为空，
+            // 等价于「关了自动检测就只剩固定与自定义条目」）
+            sync(true, extras, new ArrayList<>(detected));
         }
+    }
+
+    /** 收集所有在线玩家「穿在身上的装备」ID 集合（头盔 / 胸甲 / 护腿 / 靴子 + 主手 / 副手）。 */
+    private static Set<String> scanWornEquipment(MinecraftServer server) {
+        Set<String> worn = new TreeSet<>();
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            for (EquipmentSlot slot : EquipmentSlot.values()) {
+                ItemStack stack = player.getItemBySlot(slot);
+                if (stack.isEmpty()) continue;
+                ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
+                if (id != null) worn.add(id.toString());
+            }
+        }
+        return worn;
+    }
+
+    /** 收集所有在线玩家背包（含快捷栏）里的物品 ID 集合。 */
+    private static Set<String> scanInventory(MinecraftServer server) {
+        Set<String> held = new TreeSet<>();
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            for (ItemStack stack : player.getInventory().items) {
+                if (stack.isEmpty()) continue;
+                ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
+                if (id != null) held.add(id.toString());
+            }
+        }
+        return held;
     }
 
     /** 收集所有在线玩家佩戴中的 Curios 饰品 ID 集合。 */

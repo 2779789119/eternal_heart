@@ -1,5 +1,87 @@
 # 永恒之心 (Eternal Heart) 更新日志
 
+## 1.44.0 (2026-10-27)
+
+### 变更 — 移植另一作者的提示框方案 + 两项新功能
+提示框与两项新功能取自另一作者的修改版（他把我们的 1.42.3 jar 反编译后二次开发），
+**只取这三部分代码**，其余源码仍是我们自己的版本与注释；
+1.43.0 / 1.43.1 的「提示框分页」方案随之退场。
+
+- **提示框改为滚动窗口**：固定头部（物品名 / 槽位行 / ◆祷文◆）+ 固定分隔线钉在最上面，
+  滚轮只翻线以下的正文，按屏幕高度自动算窗口行数，底部一行暗灰提示
+  `▲ 第 x–y 行 / 共 n 行 · 滚轮翻阅 ▼`。翻到顶 / 底不再拦截滚轮，交还原版。
+- **新增自绘提示框外观**：`RenderTooltipEvent.Color` 里把原版底色与边框改透明，
+  自绘暗紫渐变底板 + 沿周长流动的炫彩环 + 内侧柔光；头部下方由 `SeparatorTooltip`
+  画一条与边框同步流动的分隔线；`MinWidthTooltip` 锁定框宽，文字再长也不撑破。
+- **反制第三方提示框接管**：清掉别模组插进组件列表的「接管标记」（如 Obscure Tooltips），
+  只保留原版与自己的组件，接管消失后提示框回到原版流程绘制。
+- **新增 Curios 饰品槽位扩容**：用 Curios 官方永久槽位修饰符按槽位加格子（随存档持久化、
+  按 UUID 幂等），配置项 `curiosSlotExpansionEnabled` / `curiosSlotExpansion`（格式 `槽位ID|总格数`），
+  面板里点开可自动读取整合包内全部已注册槽位再填数量；单槽位实际上限 4096 格。
+- **新增 RevelationFix「装备防收 / 物品防收」**：定期扫描在线玩家穿戴的装备与背包（含快捷栏），
+  把物品 ID 写进 RevelationFix「天启」豁免名单；配置项 `revelationfixGuardEquipment` /
+  `revelationfixGuardInventory`（默认关闭，需先开「启示录兼容」总开关）。
+- **`REVELATIONFIX_EXTRA_ITEMS` 升级为选择面板**：自动读取整合包内所有饰品，点选加入 / 移出
+  豁免名单，不再手写 ID。
+
+### 移除
+- **提示框翻页**：新方案不带分页 —— 删掉 `tooltipPages()` / `Page` / `Pager`、`page_nav` 与 9 个分页名、
+  `[/]` 翻页按键（`key.eternal_heart.tooltip_prev/next`），`RainbowNameHandler` 一并删除
+  （逐字上色改由 `RainbowLineTooltip` 承担）；`EternalHeartTooltipState` 精简为只保留展开状态。
+
+### 未跟随对方的部分
+- **融合上限**：对方删掉了 `fusionLimit` 与 `HeartFusion.canFuse` 的数量判定，本次**不跟随**，
+  配置与判定照旧。
+- 其余 80+ 个文件没有替换：对方那版是把我们 1.42.3 的 jar 反编译后再改的，逐行差异几乎全是
+  反编译噪声（括号展开、`this.`、`Double.MAX_VALUE` 内联、中文 `\uXXXX` 转义），
+  我们的中文注释与 `@Override` 全部保留。
+
+### 内部
+- 移植的新文件：`CurioSlotExpansion`、`CurioListScreen`、`CurioSlotScreen`、
+  `EternalHeartTooltipFrame`、`TooltipScrollHandler`、`MinWidth` / `Separator` / `RainbowLine`
+  三组 tooltip 及其 `Client*` 渲染器；`EternalHeartTooltipHandler` / `EternalHeartTooltipState` 按对方重写。
+- 手工改造的旧文件：`EternalHeartConfig`（+4 项配置）、`ConfigValues`（`CURIOS_SLOT_EXPANSION`
+  加入自由格式列表白名单，否则「槽位ID|数量」会被校验判非法）、`RevelationFixCompat`（装备/背包扫描）、
+  `EternalHeartEvents`（登录 / 重生 / tick / 数据包同步时驱动扩容）、`EternalHeartConfigScreen`
+  （两个列表改走新选择面板）、`RainbowPalette`（`hueToRgb` 放开为 public 供 tooltip 包调用）、语言文件。
+
+## 1.43.1 (2026-10-27)
+
+### 修复 — 展开后彩虹渐变消失、滚轮翻页按不动
+- **彩虹消失**：分页替换发生在 `EventPriority.LOWEST`，而彩虹着色（`RainbowNameHandler`）用的是默认优先级 ——
+  旧行先被逐字上色，随后又被整段换成分页的新行（尚未上色），于是展开状态只剩纯色文字。
+  修复：把逐字着色抽成公开的 `RainbowNameHandler.applyTo(elements, from, to)`，
+  分页处理器插入当前页的行之后，对这段新区间再着色一次。物品名与其它模组的行不受影响；
+  底部页码行保持暗灰、不参与彩虹（导航信息用彩虹反而看不清）。
+- **滚轮翻不动**：原来只挂 `InputEvent.MouseScrollingEvent`，且「界面上有任何聚焦元素就让路」。
+  背包 / 创造物品栏里滚动会先被界面或其它模组消费，搜索框残留焦点更是直接让整块逻辑失效。修复：
+  - 同时监听 `ScreenEvent.MouseScrolled.Pre` 兜底，两条来源共用 30ms 去抖 ——
+    同一次滚动只翻一页，但界面里也能稳稳触发；
+  - 只有真正聚焦 `EditBox`（聊天 / 搜索框）时才让路，聚焦按钮或槽位不再屏蔽翻页。
+
+## 1.43.0 (2026-10-27)
+
+### 新增 — 提示框改成翻页，不再一屏铺三十多行
+- 按住 Shift 展开后按功能分**页**显示，共 9 页：核心 / 属性 / 防御 / 战斗 / 采集 / 保命 / 移动 / 光环与实用 / 融合。
+- 每页底部固定一行暗灰小字：`第 n/N 页 · 页名　　滚轮 或 [ / ] 翻页`（键名取当前实际绑定）。
+- 翻页方式两种：**鼠标滚轮**（上滚上一页 / 下滚下一页）或默认 `[` `]`（控制设置里可改），
+  **只在按住 Shift 且提示框正在显示时**生效，其余时候照样交给游戏 / 界面；第 1 页往前翻会绕到最后一页。
+- 滚轮翻页会**取消**当次滚动事件，避免背包切栏 / JEI 翻页 / 快捷栏切换跟着一起动（否则一次翻两页）；
+  松开 Shift 收起提示框后，滚轮立刻恢复原有用途。
+- 按键监听走 `InputEvent.Key` 而不是 `KeyMapping.consumeClick`：背包、合成台等界面里的提示框
+  同样能翻页（界面自己会先吃掉按键，KeyMapping 的点击计数就不更新了）；滚轮同理走
+  `InputEvent.MouseScrollingEvent` 并取消该次滚动。
+- 鼠标移开 0.25 秒后再悬停自动回到第一页；聊天栏 / 搜索框正在输入时不抢键。
+- 某一类功能因为配置全关而一行都没产出时，该页不会留下空白页，总页数随之变化。
+- 收起状态（不按 Shift）表现不变；其它模组追加的行（饰品栏位、属性说明等）仍在当前页之后显示。
+
+### 内部
+- `EternalHeartItem#appendHoverText` 拆成 `tooltipPages(stack)`：返回 `List<Page>`（页名 + 行）。
+  `appendHoverText` 仍把所有页按顺序展平输出，服务端取 tooltip 文本 / 其它模组读列表的行为不变，
+  分页只发生在客户端渲染层（`EternalHeartTooltipHandler`）。
+- 每行依旧是单个 `literal`（1 个 span），thefool_font 的 128 span 上限保护照旧有效；
+  新增的页码行同样先 resolve 再包成单 span。
+
 ## 1.42.2 (2026-10-25)
 
 ### 修复 — 只带饰品槽标签的物品无法融合（如机械动力工程护目镜）

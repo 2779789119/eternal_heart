@@ -37,7 +37,7 @@ public final class ConfigValues {
             "LETHAL_GUARD_COOLDOWN", "ITEM_GUARD_TICKS", "LETHAL_GUARD_IMMUNE");
     /** 允许「自由格式」条目的列表配置（元素不是纯资源 ID，另有专门校验规则）。 */
     private static final Set<String> FREE_FORM_LISTS = Set.of("EXTRA_ATTRIBUTES", "CUSTOM_RECIPES",
-            "CUSTOM_RITUALS", "PASSIVE_EXTRA_EFFECTS");
+            "CUSTOM_RITUALS", "PASSIVE_EXTRA_EFFECTS", "CURIOS_SLOT_EXPANSION");
     private static final Set<String> PERCENT = Set.of("KNOCKBACK_RESIST", "MOVEMENT_SPEED",
             "DAMAGE_REDUCTION", "FALL_DAMAGE_RATIO", "REFLECT_RATIO", "EXPLOSION_RESIST",
             "DAMAGE_CAP_RATIO", "PROJECTILE_RESIST", "MAGIC_RESIST", "DODGE_CHANCE",

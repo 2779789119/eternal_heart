@@ -4,6 +4,7 @@ import com.eternal_heart.config.ConfigValues;
 import com.eternal_heart.features.AegisSystem;
 import com.eternal_heart.features.CombatSystem;
 import com.eternal_heart.features.CurioGuard;
+import com.eternal_heart.features.CurioSlotExpansion;
 import com.eternal_heart.features.DefenseSystem;
 import com.eternal_heart.features.EquipTracker;
 import com.eternal_heart.features.FeatureManager;
@@ -175,6 +176,8 @@ public class EternalHeartEvents {
             AegisSystem.restoreIfPending(player);
             CurioGuard.restoreIfPending(player);
         }
+        // 重生会重建 Curios 背包：让槽位扩容重新按配置套一遍
+        CurioSlotExpansion.schedule();
     }
 
     /** 登录后重同步飞行能力（客户端首次构建，确保授权状态与服务端一致）。 */
@@ -188,6 +191,8 @@ public class EternalHeartEvents {
         }
         // 玩家上线后其佩戴的饰品纳入自动检测名单，尽快重扫
         RevelationFixCompat.scheduleScan();
+        // 玩家上线后按配置给其 Curios 槽位套一次扩容
+        CurioSlotExpansion.schedule();
     }
 
     /** 死亡重生时归还防护机制备份的物品与经验（非死亡复制不处理）。 */
@@ -258,6 +263,8 @@ public class EternalHeartEvents {
         TimeStop.tick(event.getServer());
         // 例行扫描在线玩家佩戴的饰品（内部节流 5 秒），维持天启豁免名单自动检测
         RevelationFixCompat.scanAndSync(event.getServer());
+        // 槽位扩容（内部节流 40 tick，配置/玩家数没变化时什么都不做）
+        CurioSlotExpansion.tick(event.getServer());
     }
 
     /**
@@ -270,10 +277,11 @@ public class EternalHeartEvents {
         SurvivalSystem.onUseItemStart(event);
     }
 
-    /** 数据包重载后配方可能变化，清空熔炼结果缓存。 */
+    /** 数据包重载后配方可能变化，清空熔炼结果缓存；槽位注册表也可能变化，重排一次扩容。 */
     @SubscribeEvent
     public static void onDatapackSync(OnDatapackSyncEvent event) {
         UtilitySystem.invalidateSmeltingCache();
+        CurioSlotExpansion.schedule();
     }
 
     // ============================================================

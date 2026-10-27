@@ -6,7 +6,7 @@ package com.eternal_heart.client;
  * <p>色相制的饱和度与明度都固定为 1（纯色、全亮），所以只需要一个色相参数：
  * 光环用它按角度铺色带，物品名用它按字符铺渐变。</p>
  */
-final class RainbowPalette {
+public final class RainbowPalette {
 
     private RainbowPalette() {
     }
@@ -18,7 +18,7 @@ final class RainbowPalette {
      * 因此色带过渡是连续的，不会出现色阶断层。色相会自动归一到 [0,1)，
      * 因此传入负数或超过 1 的值（随时间累积的流动量）都能正常工作。</p>
      */
-    static int hueToRgb(float hue) {
+    public static int hueToRgb(float hue) {
         float wrapped = hue - (float) Math.floor(hue);   // 归一到 [0,1)
         float scaled = wrapped * 6.0F;
         int sector = (int) scaled;                       // 0~5，落在哪个 60° 色区

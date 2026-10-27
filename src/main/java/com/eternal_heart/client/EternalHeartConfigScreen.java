@@ -628,6 +628,9 @@ public class EternalHeartConfigScreen extends UiScreen {
             case "CUSTOM_RITUALS" -> new RitualEditorScreen(this, initial, onChange);
             // 附加被动效果：每条还带等级与时长，走专用选择器（支持其它模组的效果）
             case "PASSIVE_EXTRA_EFFECTS" -> new PassiveEffectScreen(this, initial, onChange);
+            // 豁免饰品 / 槽位扩容：都从整合包里自动读取可选条目，点选加入后填数量
+            case "REVELATIONFIX_EXTRA_ITEMS" -> new CurioListScreen(this, initial, onChange);
+            case "CURIOS_SLOT_EXPANSION" -> new CurioSlotScreen(this, initial, onChange);
             default -> new EffectListScreen(this, fieldName, initial, onChange);
         });
     }

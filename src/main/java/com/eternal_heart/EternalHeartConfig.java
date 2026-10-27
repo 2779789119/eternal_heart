@@ -316,6 +316,10 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.BooleanValue REVELATIONFIX_WHITELIST;
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> REVELATIONFIX_EXTRA_ITEMS;
     public static final ForgeConfigSpec.BooleanValue REVELATIONFIX_AUTO_DETECT;
+    public static final ForgeConfigSpec.BooleanValue REVELATIONFIX_GUARD_EQUIPMENT;
+    public static final ForgeConfigSpec.BooleanValue REVELATIONFIX_GUARD_INVENTORY;
+    public static final ForgeConfigSpec.BooleanValue CURIOS_SLOT_EXPANSION_ENABLED;
+    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> CURIOS_SLOT_EXPANSION;
 
     // ==================== 渲染 ====================
 
@@ -803,6 +807,25 @@ public class EternalHeartConfig {
                         "玩家戴上新饰品即自动保护，饰品被卸下且无人佩戴时自动移除",
                         "（依赖上面的「启示录兼容」总开关与「自定义饰品防收」列表，三者合并生效）")
                 .define("revelationfixAutoDetect", true);
+        REVELATIONFIX_GUARD_EQUIPMENT = BUILDER.comment(
+                        "装备防收 - 开启后定期扫描所有在线玩家「穿在身上的装备」：",
+                        "头盔 / 胸甲 / 护腿 / 靴子 + 主手 / 副手，把物品 ID 写入 RevelationFix「天启」豁免名单",
+                        "（脱下或换下后自动移除；需打开上面的「启示录兼容」总开关才生效）")
+                .define("revelationfixGuardEquipment", false);
+        REVELATIONFIX_GUARD_INVENTORY = BUILDER.comment(
+                        "物品防收 - 开启后定期扫描所有在线玩家背包（含快捷栏）里的物品，",
+                        "把物品 ID 写入 RevelationFix「天启」豁免名单",
+                        "（物品用完 / 移出背包后自动移除；需打开上面的「启示录兼容」总开关才生效）")
+                .define("revelationfixGuardInventory", false);
+        CURIOS_SLOT_EXPANSION_ENABLED = BUILDER.comment(
+                        "Curios 饰品槽位扩容 - 总开关：按下面的列表给整合包内的饰品槽位加格子",
+                        "（点开列表可自动读取当前整合包里全部已注册的饰品槽位，选中槽位再填数量）")
+                .define("curiosSlotExpansionEnabled", true);
+        CURIOS_SLOT_EXPANSION = BUILDER.comment(
+                        "饰品槽位扩容列表 - 每项格式「槽位ID|总数量」，如 ring|10、eternal_heart|3",
+                        "数量 = 该槽位扩容后的总格数（不是增量），编辑框允许填到整数极限 2147483647",
+                        "（出于内存与界面安全，每个槽位实际最多生效 4096 格，超出部分按 4096 处理；改完约 2 秒内自动生效，无需重启）")
+                .defineList("curiosSlotExpansion", () -> List.of(), o -> o instanceof String);
         BUILDER.pop();
 
         BUILDER.push("渲染 (Rendering)");
