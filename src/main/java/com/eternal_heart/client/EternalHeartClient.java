@@ -49,6 +49,13 @@ public class EternalHeartClient {
                 EternalHeartMod.ETERNAL_HEART.get(), () -> HaloCurioRenderer.INSTANCE));
     }
 
+    /** 收起状态下那句浮动箴言的客户端渲染器。 */
+    @SubscribeEvent
+    public static void registerTooltipFactories(net.minecraftforge.client.event.RegisterClientTooltipComponentFactoriesEvent event) {
+        event.register(com.eternal_heart.client.tooltip.FloatingLineTooltip.class,
+                com.eternal_heart.client.tooltip.ClientFloatingLineTooltip::new);
+    }
+
     @SubscribeEvent
     public static void registerKeyMappings(RegisterKeyMappingsEvent event) {
         com.eternal_heart.network.ConfigNetwork.setClientReceiver(ClientConfigState::receive);

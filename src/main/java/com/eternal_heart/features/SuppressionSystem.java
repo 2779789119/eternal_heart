@@ -5,10 +5,13 @@ import com.eternal_heart.config.ConfigValues;
 import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import it.unimi.dsi.fastutil.objects.Object2LongMap;
+import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -35,12 +38,23 @@ public class SuppressionSystem implements IFeature {
     /** 禁疗到期时刻（实体 UUID → 到期游戏时间）。 */
     private static final Object2LongOpenHashMap<UUID> SUPPRESSED_UNTIL = new Object2LongOpenHashMap<>();
 
-    /** 清扫周期（tick）与触发清扫的条目数阈值。 */
+    /** 清扫周期（tick）。 */
     private static final int SWEEP_INTERVAL = 600;
-    private static final int SWEEP_THRESHOLD = 256;
 
     /** 单次压制的最长秒数（防溢出：秒 × 20 写入 long，但仍给个理智上限）。 */
     private static final int MAX_SECONDS = 1_000_000;
+
+    /**
+     * 治疗类效果：压制期间禁止获得。
+     *
+     * <p>这些效果都能绕开 {@code heal} 注入点：
+     * 吸收值直接是一层额外的血量（金苹果），生命提升抬高上限后再回填，
+     * 瞬间治疗走 {@code setHealth} 的抬高路径（部分模组实现会绕过 {@code heal}）。
+     * 从施加阶段就拒绝，比事后逐个拦截可靠。</p>
+     */
+    private static final Set<MobEffect> HEALING_EFFECTS = Set.of(
+            MobEffects.HEAL, MobEffects.REGENERATION,
+            MobEffects.ABSORPTION, MobEffects.HEALTH_BOOST);
 
     private static long lastSweep;
 
@@ -73,6 +87,25 @@ public class SuppressionSystem implements IFeature {
         return true;
     }
 
+    /** 压制期间是否禁止获得吸收值（{@code setAbsorptionAmount} 注入点使用）。 */
+    public static boolean absorptionBlocked() {
+        if (!ConfigValues.get(EternalHeartConfig.SUPPRESSION_ENABLED)) return false;
+        return ConfigValues.get(EternalHeartConfig.SUPPRESSION_STRIP_ABSORPTION);
+    }
+
+    /**
+     * 该实体此刻是否不能获得这个效果（压制期间的治疗类效果）。
+     *
+     * <p>由 {@code MobEffectEvent.Applicable} 调用，从施加阶段就拒绝 —— 这条比事后拦截更早：
+     * 效果一旦挂上，客户端就会先显示、再生还会立刻回一次血。</p>
+     */
+    public static boolean blocksHealingEffect(LivingEntity entity, MobEffect effect) {
+        if (effect == null || !HEALING_EFFECTS.contains(effect)) return false;
+        if (!ConfigValues.get(EternalHeartConfig.SUPPRESSION_ENABLED)) return false;
+        if (!ConfigValues.get(EternalHeartConfig.SUPPRESSION_STRIP_HEALING_EFFECTS)) return false;
+        return suppressed(entity);
+    }
+
     // ============================================================
     //  命中结算
     // ============================================================
@@ -96,6 +129,12 @@ public class SuppressionSystem implements IFeature {
                 // 每次命中刷新持续时间：持续挂住的敌人会一直被压在「回不了血」的状态里
                 SUPPRESSED_UNTIL.put(target.getUUID(), now + (long) seconds * 20L);
                 sweep(now);
+                // 吸收值（金苹果的黄心）是等价回血：压制生效瞬间清零，
+                // 之后由 setAbsorptionAmount 注入点拒绝重新获得
+                if (ConfigValues.get(EternalHeartConfig.SUPPRESSION_STRIP_ABSORPTION)
+                        && target.getAbsorptionAmount() > 0f) {
+                    target.setAbsorptionAmount(0f);
+                }
             }
         }
 
@@ -104,9 +143,14 @@ public class SuppressionSystem implements IFeature {
         }
     }
 
-    /** 周期性清扫过期条目（只在表变大后触发，平时零开销）。 */
+    /**
+     * 周期性清扫过期条目（空表直接返回，常态零开销）。
+     *
+     * <p>原实现对表大小也有阈值（≥256 才扫），于是「目标死了、之后再也不被访问」的过期条目
+     * 会一直留着，直到表偶然涨大才回收。按时间清扫就够了，空表判断已经把常态开销压到一次 isEmpty。</p>
+     */
     private static void sweep(long now) {
-        if (SUPPRESSED_UNTIL.size() < SWEEP_THRESHOLD) return;
+        if (SUPPRESSED_UNTIL.isEmpty()) return;
         if (now - lastSweep < SWEEP_INTERVAL) return;
         lastSweep = now;
 

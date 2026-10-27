@@ -119,6 +119,25 @@ public abstract class LivingEntityMixin {
     }
 
     /**
+     * 压制·吸收值 —— 被压制的目标无法再获得吸收值（金苹果的黄心）。
+     *
+     * <p>为什么需要单独拦：吸收值是一条与生命值等价的回血路径（{@code actuallyHurt} 里
+     * 先扣吸收再扣血）。此前禁疗只拦 {@code heal} 与「抬高型 {@code setHealth}」，
+     * 目标吃一个金苹果就能拿到 4 点可挡伤害的「血量」，禁疗在最需要它的高血量 Boss 上形同虚设。</p>
+     *
+     * <p>只拦「抬高」：清零 / 扣减（包括压制生效时的清零）一律放行，否则会把自己也锁死。</p>
+     */
+    @Inject(method = "setAbsorptionAmount", at = @At("HEAD"), cancellable = true)
+    private void eternalHeart$blockSuppressedAbsorption(float amount, CallbackInfo ci) {
+        LivingEntity self = (LivingEntity) (Object) this;
+        if (amount <= self.getAbsorptionAmount()) return;
+        if (!SuppressionSystem.absorptionBlocked()) return;
+        if (SuppressionSystem.suppressed(self)) {
+            ci.cancel();
+        }
+    }
+
+    /**
      * 无视受击无敌帧 —— 让我方造成的每一次打击都全额结算。
      *
      * <p><b>为什么需要 Mixin</b>：原版 {@code LivingEntity#hurt} 开头就是

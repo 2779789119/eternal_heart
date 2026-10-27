@@ -114,7 +114,8 @@ public class AuraSystem implements IFeature {
         for (LivingEntity target : Scan.hostiles(level, player, scanRange)) {
             if (damageBox != null && damageBox.intersects(target.getBoundingBox())) {
                 float amount = Scan.isBoss(target) ? damage * bossMultiplier : damage;
-                target.hurt(player.damageSources().magic(), amount);
+                // 走战斗管线：光环伤害同样吃到 Boss 增伤 / 满怒 / 处决增伤 / 时停增伤 / 限伤穿透
+                CombatSystem.auraStrike(player, target, amount);
             }
             if (witherDue) {
                 int witherDuration = Math.max(1, ConfigValues.get(EternalHeartConfig.WITHER_AURA_DURATION));

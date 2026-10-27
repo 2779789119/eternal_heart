@@ -75,6 +75,8 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.BooleanValue AIR_SUPPLY_LOCK;
     /** 饥饿锁定：佩戴时饥饿值与饱食度不会下降。 */
     public static final ForgeConfigSpec.BooleanValue HUNGER_LOCK;
+    /** 附加被动效果：任意已注册药水效果（含其它模组），格式 "modid:effect_id|等级|时长tick"。 */
+    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> PASSIVE_EXTRA_EFFECTS;
 
     // ==================== 机动系统 ====================
     public static final ForgeConfigSpec.BooleanValue JUMP_BOOST;
@@ -112,10 +114,17 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.DoubleValue IGNITE_CHANCE;
     public static final ForgeConfigSpec.IntValue IGNITE_DURATION;
     public static final ForgeConfigSpec.BooleanValue PIERCE_DAMAGE_CAP;
-    public static final ForgeConfigSpec.BooleanValue PIERCE_IMMUNITY;
+    /** 破限·锁血重试：补足被目标锁住时，最多在后续多少 tick 内继续尝试打进这笔伤害。 */
+    public static final ForgeConfigSpec.IntValue PIERCE_RETRY_TICKS;
     /** 溅射不再要求目标与被击目标同种生物（范围内敌对生物全部命中）。 */
     public static final ForgeConfigSpec.BooleanValue AOE_SPLASH_ALL_TYPES;
     public static final ForgeConfigSpec.DoubleValue KILL_CHAIN_RATIO;
+    /** 处决增伤：目标生命比例低于阈值后，按缺失生命线性放大伤害。 */
+    public static final ForgeConfigSpec.DoubleValue EXECUTE_DAMAGE_BONUS;
+    public static final ForgeConfigSpec.DoubleValue EXECUTE_DAMAGE_THRESHOLD;
+    /** 溢出转移：单次伤害超过目标剩余生命时，把溢出部分打向附近敌人。 */
+    public static final ForgeConfigSpec.DoubleValue OVERFLOW_RATIO;
+    public static final ForgeConfigSpec.IntValue OVERFLOW_MAX_TARGETS;
     /** 级联伤害深度上限（0 = 次级伤害不再产生新的次级伤害）。 */
     public static final ForgeConfigSpec.IntValue CASCADE_DEPTH_LIMIT;
     /** 无视无敌帧：我方造成的伤害不再被目标的受击无敌帧削减。 */
@@ -132,6 +141,10 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.BooleanValue SUPPRESSION_STRIP_BENEFITS;
     /** 是否同样压制被攻击的玩家（PvP）。 */
     public static final ForgeConfigSpec.BooleanValue SUPPRESSION_AFFECT_PLAYERS;
+    /** 压制期间清零并禁止获得吸收值（金苹果的黄心挡不住禁疗）。 */
+    public static final ForgeConfigSpec.BooleanValue SUPPRESSION_STRIP_ABSORPTION;
+    /** 压制期间禁止获得治疗类效果（再生 / 吸收 / 生命提升 / 瞬间治疗）。 */
+    public static final ForgeConfigSpec.BooleanValue SUPPRESSION_STRIP_HEALING_EFFECTS;
 
     // ==================== 护盾系统 ====================
     public static final ForgeConfigSpec.DoubleValue SHIELD_PER_SEC;
@@ -175,6 +188,8 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.DoubleValue DAMAGE_AURA_DAMAGE;
     public static final ForgeConfigSpec.IntValue DAMAGE_AURA_TICK_INTERVAL;
     public static final ForgeConfigSpec.DoubleValue DAMAGE_AURA_BOSS_MULT;
+    /** 光环伤害是否走完整战斗管线（增伤 / 斩杀 / 处决 / 溢出 / 限伤穿透）。 */
+    public static final ForgeConfigSpec.BooleanValue AURA_USE_COMBAT_PIPELINE;
 
     // ==================== 采集强化 ====================
     public static final ForgeConfigSpec.BooleanValue AUTO_SMELT;
@@ -183,6 +198,8 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.BooleanValue VEIN_MINER;
     public static final ForgeConfigSpec.IntValue VEIN_MAX_BLOCKS;
     public static final ForgeConfigSpec.BooleanValue VEIN_USE_TAGS;
+    /** 连锁挖掘按矿脉同族标签连通（铁矿 ↔ 深板岩铁矿、模组同族矿石连成一片）。 */
+    public static final ForgeConfigSpec.BooleanValue VEIN_MATCH_TAGS;
     public static final ForgeConfigSpec.IntValue FORTUNE_BONUS;
     public static final ForgeConfigSpec.IntValue LOOTING_BONUS;
 
@@ -212,6 +229,8 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.BooleanValue MAGNET_ENABLED;
     public static final ForgeConfigSpec.DoubleValue MAGNET_RANGE;
     public static final ForgeConfigSpec.DoubleValue MAGNET_INSTANT_RANGE;
+    /** 磁铁同时吸附经验球。 */
+    public static final ForgeConfigSpec.BooleanValue MAGNET_PULL_XP;
     public static final ForgeConfigSpec.BooleanValue GLOW_ENABLED;
     public static final ForgeConfigSpec.DoubleValue GLOW_RANGE;
 
@@ -277,6 +296,12 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.BooleanValue DEATH_GUARD;
     public static final ForgeConfigSpec.DoubleValue LETHAL_GUARD_RATIO;
     public static final ForgeConfigSpec.IntValue LETHAL_GUARD_COOLDOWN;
+    /** 濒死无敌窗口（秒）：致死保护 / 死亡兜底触发后的短时间内完全免疫伤害。 */
+    public static final ForgeConfigSpec.IntValue LETHAL_GUARD_IMMUNE;
+    /** 强制击杀兜底：让 /kill 这类「无视无敌」的伤害同样受致死保护约束。 */
+    public static final ForgeConfigSpec.BooleanValue KILL_GUARD;
+    /** 虚空拦截：掉出世界时取消虚空伤害并传送回最后一次安全落点。 */
+    public static final ForgeConfigSpec.BooleanValue VOID_GUARD;
     public static final ForgeConfigSpec.BooleanValue KEEP_INVENTORY;
     public static final ForgeConfigSpec.BooleanValue KEEP_EXPERIENCE;
     public static final ForgeConfigSpec.BooleanValue ITEM_GUARD;
@@ -410,6 +435,14 @@ public class EternalHeartConfig {
                 .define("passiveEffectInfinite", true);
         AIR_SUPPLY_LOCK = BUILDER.comment("氧气锁定 - 佩戴时氧气值不会下降（等同永久水下呼吸，但不受效果清除影响）").define("airSupplyLock", true);
         HUNGER_LOCK = BUILDER.comment("饥饿锁定 - 佩戴时饥饿值与饱食度不再下降（不管多高强度的消耗都保持满值）").define("hungerLock", true);
+        PASSIVE_EXTRA_EFFECTS = BUILDER.comment(
+                        "附加被动效果 - 从全部已注册药水效果里自由选择（含其它模组的效果）",
+                        "格式: \"modid:effect_id|等级|时长tick\"（等级从 1 开始 = I 级；时长 -1 = 永久）",
+                        "省略后两段时默认 I 级、永久。示例: \"minecraft:strength|2|600\" = 力量 II、30 秒到期自动续",
+                        "面板内点「编辑」可视化选择；未注册的效果 ID 会在加载时被忽略",
+                        "注意：被负面效果拦截（HARMFUL 分类 / 黑名单）的效果不会生效，需先加入白名单")
+                .defineList("passiveExtraEffects", () -> List.of(),
+                        o -> o instanceof String s && !s.isBlank() && s.length() <= 128);
         BUILDER.pop();
 
         BUILDER.push("机动系统 (Mobility)");
@@ -452,12 +485,36 @@ public class EternalHeartConfig {
         INFINITE_ARROWS = BUILDER.comment("射箭不消耗箭矢").define("infiniteArrows", true);
         IGNITE_CHANCE = BUILDER.comment("攻击点燃概率").defineInRange("igniteChance", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
         IGNITE_DURATION = BUILDER.comment("点燃持续时间 (秒)").defineInRange("igniteDuration", 3, Integer.MIN_VALUE, Integer.MAX_VALUE);
-        PIERCE_DAMAGE_CAP = BUILDER.comment("突破限伤 - 最终结算阶段把伤害恢复为我方期望值：其它模组的单次伤害上限（限伤）会被突破。","注意：期望值是护甲结算前的数值，因此开启后同时会穿透目标护甲 / 抗性 / 吸收的减伤；只提升不压低，其它模组的合法增伤不受影响").define("pierceDamageCap", true);
-        PIERCE_IMMUNITY = BUILDER.comment("突破免伤 - 目标用「取消伤害事件」完全免疫时改用真实伤害直接扣血（仅对非玩家目标生效；会无视 BOSS 无敌阶段与不死图腾）").define("pierceImmunity", false);
+        PIERCE_DAMAGE_CAP = BUILDER.comment(
+                        "突破限伤 / 免伤（总开关）- 开启后我方伤害不受任何单次伤害上限 / 免伤影响：",
+                        "事件内恢复 + 结算后核对补足，覆盖三类限伤：",
+                        "1) 限伤写在目标 hurt() 里（伤害事件之前就压完）；2) 在本事件返回之后再夹一次；",
+                        "3) 目标 hurt() 直接 return false（无敌帧 / 阶段免伤），伤害事件根本不触发。",
+                        "关闭 = 完全原版行为、零介入（不记录、不核对、不干预）。",
+                        "注意：期望值是护甲结算前的数值，因此开启后同时会穿透目标护甲 / 抗性 / 吸收的减伤；",
+                        "只提升不压低，其它模组的合法增伤不受影响；仅对非玩家目标生效")
+                .define("pierceDamageCap", true);
+        PIERCE_RETRY_TICKS = BUILDER.comment(
+                        "破限·锁血重试 (tick) - 补足被目标锁血 / 阶段无敌挡住时，在后续多少 tick 内继续尝试",
+                        "此前这种目标会把这一笔伤害直接吞掉（只补一次，写不进去就作废）；0 = 不重试")
+                .defineInRange("pierceRetryTicks", 3, 0, 40);
         AOE_SPLASH_ALL_TYPES = BUILDER.comment(
                         "溅射·不分种类 - 开启后溅射命中范围内全部敌对生物；",
                         "关闭则退回旧行为（只打与被击目标同种生物）").define("aoeSplashAllTypes", true);
         KILL_CHAIN_RATIO = BUILDER.comment("击杀连锁伤害比例 - 以被击杀者最大生命值计算 (50 = 50%)").defineInRange("killChainRatio", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
+        EXECUTE_DAMAGE_BONUS = BUILDER.comment(
+                        "处决增伤 - 目标生命比例低于阈值后的最大额外伤害倍率 (50 = 最多 +50%)",
+                        "按缺失生命线性增长：血量恰好在阈值处 ×1.0，趋近 0 时趋近上限；0 = 关闭",
+                        "与上面的「斩杀」互补：斩杀负责收割最后 10%，这里负责 10%~阈值之间的过渡段")
+                .defineInRange("executeDamageBonus", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
+        EXECUTE_DAMAGE_THRESHOLD = BUILDER.comment("处决增伤起始阈值 (50 = 目标血量低于 50% 开始增伤；0 = 关闭)")
+                .defineInRange("executeDamageThreshold", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
+        OVERFLOW_RATIO = BUILDER.comment(
+                        "溢出转移 - 单次伤害超过目标剩余生命时，把溢出部分按此比例打向附近敌人 (30 = 30%溢出量)",
+                        "只对普通命中生效（斩杀本身已经秒杀，不再溢出）；0 = 关闭")
+                .defineInRange("overflowRatio", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
+        OVERFLOW_MAX_TARGETS = BUILDER.comment("溢出转移的目标数量上限 (0 = 关闭；按距离由近到远选取)")
+                .defineInRange("overflowMaxTargets", 3, 0, 64);
         CASCADE_DEPTH_LIMIT = BUILDER.comment(
                         "级联伤害深度上限 - 溅射 / 连锁产生的伤害是否允许再产生溅射 / 连锁：",
                         "0 = 不允许（旧行为，最安全）；1 = 允许一层；上限 8 防止怪群无限递归把主线程卡死")
@@ -486,6 +543,14 @@ public class EternalHeartConfig {
                         "对玩家生效 - 是否同样压制被攻击的玩家",
                         "默认关闭：联机里若双方都佩戴，会互相禁疗到谁都回不了血")
                 .define("suppressionAffectPlayers", false);
+        SUPPRESSION_STRIP_ABSORPTION = BUILDER.comment(
+                        "压制吸收值 - 命中时清零目标的吸收值（黄心），且压制期间无法再获得",
+                        "此前禁疗只拦 heal / setHealth，金苹果给吸收值这条等价回血路径完全没被覆盖")
+                .define("suppressionStripAbsorption", true);
+        SUPPRESSION_STRIP_HEALING_EFFECTS = BUILDER.comment(
+                        "压制治疗类效果 - 压制期间目标无法获得再生 / 吸收 / 生命提升 / 瞬间治疗",
+                        "从源头挡掉：已经挂着这类效果的目标仍会被上面的「清除增益」剥掉")
+                .define("suppressionStripHealingEffects", true);
         BUILDER.pop();
 
         BUILDER.push("护盾系统 (Shield)");
@@ -515,6 +580,11 @@ public class EternalHeartConfig {
         DAMAGE_AURA_DAMAGE = BUILDER.comment("伤害光环每次触发的伤害").defineInRange("damageAuraDamage", 4.0, -Double.MAX_VALUE, Double.MAX_VALUE);
         DAMAGE_AURA_TICK_INTERVAL = BUILDER.comment("伤害光环触发间隔 (tick)").defineInRange("damageAuraTickInterval", 20, Integer.MIN_VALUE, Integer.MAX_VALUE);
         DAMAGE_AURA_BOSS_MULT = BUILDER.comment("伤害光环对Boss伤害倍率 (叠加到基础伤害)").defineInRange("damageAuraBossMult", 3.0, -Double.MAX_VALUE, Double.MAX_VALUE);
+        AURA_USE_COMBAT_PIPELINE = BUILDER.comment(
+                        "光环走战斗管线 - 光环伤害改为经过与近战相同的处理：",
+                        "Boss 增伤 / 低血狂暴 / 满怒 +5% / 处决增伤 / 时停增伤 / 溢出转移 / 溅射 / 限伤穿透都会生效",
+                        "关闭则退回旧行为（固定数值直接 hurt，只有「对 Boss 倍率」一个加成）")
+                .define("auraUseCombatPipeline", true);
         BUILDER.pop();
 
         BUILDER.push("采集强化 (Harvesting)");
@@ -524,13 +594,19 @@ public class EternalHeartConfig {
         VEIN_MINER = BUILDER.comment("连锁挖掘 - 一键挖光同种矿脉").define("veinMiner", true);
         VEIN_MAX_BLOCKS = BUILDER.comment("连锁挖掘最大方块数 (上限 65536，再大等于让服务器长时间阻塞)").defineInRange("veinMaxBlocks", 64, Integer.MIN_VALUE, 65536);
         VEIN_USE_TAGS = BUILDER.comment("使用 forge:ores 标签识别矿石 (支持所有模组矿石)").define("veinUseTags", true);
+        VEIN_MATCH_TAGS = BUILDER.comment(
+                        "连锁挖掘·同族连通 - 按矿石子标签（forge:ores/iron 等）判断连通，",
+                        "使铁矿与深板岩铁矿、模组同族矿石连成一片；关闭则退回「必须是同一种方块」")
+                .define("veinMatchTags", true);
         FORTUNE_BONUS = BUILDER.comment("矿石额外掉落补判次数 (每次 33% 概率复制一份，不是原版时运等级；上限 1000)").defineInRange("fortuneBonus", 3, Integer.MIN_VALUE, 1000);
         LOOTING_BONUS = BUILDER.comment("额外抢夺等级 (加到武器抢夺上；上限 1000)").defineInRange("lootingBonus", 3, Integer.MIN_VALUE, 1000);
         BUILDER.pop();
 
         BUILDER.push("饰品融合 (Fusion)");
         FUSION_ENABLED = BUILDER.comment("饰品融合 - 允许在工作台把永恒之心与其它饰品合成，继承其属性与 Curios 回调能力（攻击/生命等属性、每 tick 效果、装备时效果、时运/抢夺等）").define("fusionEnabled", true);
-        FUSION_LIMIT = BUILDER.comment("饰品融合上限 - 永恒之心最多融合多少个饰品 (0 = 禁止融合)").defineInRange("fusionLimit", 16, 0, 256);
+        FUSION_LIMIT = BUILDER.comment("饰品融合上限 - 永恒之心最多融合多少个饰品 (0 = 禁止融合，默认 32，无上限)",
+                        "实际上限只受物品 NBT 大小与装备时的属性收集开销约束")
+                .defineInRange("fusionLimit", 32, 0, Integer.MAX_VALUE);
         BUILDER.pop();
 
         BUILDER.push("自定义配方 (Custom Recipes)");
@@ -615,6 +691,7 @@ public class EternalHeartConfig {
         MAGNET_ENABLED = BUILDER.comment("物品磁铁开关 (关闭后「物品磁铁范围」与「磁铁瞬吸范围」一并停用，范围设置保留)").define("magnetEnabled", true);
         MAGNET_RANGE = BUILDER.comment("物品磁铁范围 (格，0 = 关闭；上限 512 为引擎安全值)").defineInRange("magnetRange", 8.0, -Double.MAX_VALUE, 512.0);
         MAGNET_INSTANT_RANGE = BUILDER.comment("物品即时捡取范围 - 此范围内物品直接进入背包 (格；上限 512)").defineInRange("magnetInstantRange", 2.0, -Double.MAX_VALUE, 512.0);
+        MAGNET_PULL_XP = BUILDER.comment("磁铁吸附经验球 - 经验球与物品共用同一吸附范围（即时捡取范围内直接吸收）").define("magnetPullXp", true);
         GLOW_ENABLED = BUILDER.comment("生物发光侦测开关 (关闭后「生物发光侦测范围」停用，范围设置保留)").define("glowEnabled", true);
         GLOW_RANGE = BUILDER.comment("生物发光侦测范围 (格，0 = 关闭；上限 512 为引擎安全值)").defineInRange("glowRange", 24.0, -Double.MAX_VALUE, 512.0);
         BUILDER.pop();
@@ -684,6 +761,19 @@ public class EternalHeartConfig {
         DEATH_GUARD = BUILDER.comment("死亡兜底 - 致死保护没拦住时（直接 die / 绕过伤害管线）在死亡结算阶段强行取消死亡，保留致死保护比例的生命；与致死保护共享冷却").define("deathGuard", true);
         LETHAL_GUARD_RATIO = BUILDER.comment("致死保护保留生命比例 (15 = 保留最大生命的 15%，最低保留 1 点；≥100 等于免疫致命伤)").defineInRange("lethalGuardRatio", 0.15, -Double.MAX_VALUE, Double.MAX_VALUE);
         LETHAL_GUARD_COOLDOWN = BUILDER.comment("致死保护冷却 (tick，冷却期间不再触发；0 = 无冷却)").defineInRange("lethalGuardCooldown", 600, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        LETHAL_GUARD_IMMUNE = BUILDER.comment(
+                        "濒死无敌窗口 (秒) - 致死保护 / 死亡兜底触发后的一段时间内完全免疫伤害（图腾式保护，避免刚被救回就被下一次攻击打死）",
+                        "0 = 关闭（只回血，不给无敌窗口）")
+                .defineInRange("lethalGuardImmune", 2, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        KILL_GUARD = BUILDER.comment(
+                        "强制击杀兜底 - 让 /kill、generic_kill 这类「无视无敌」的强制击杀同样走致死保护与死亡兜底",
+                        "打开后即使被 /kill 也会保留致死保护比例的生命；关闭则保持原版（一击必死）",
+                        "虚空伤害不受此开关影响（由下面的「虚空拦截」专管，否则会永远卡在虚空里）")
+                .define("killGuard", true);
+        VOID_GUARD = BUILDER.comment(
+                        "虚空拦截 - 掉出世界时拦下虚空伤害，并把玩家传送回最后一次安全落点",
+                        "（未记录到安全落点时抬到建筑上限，与生存系统的虚空救援一致）")
+                .define("voidGuard", true);
         KEEP_INVENTORY = BUILDER.comment("死亡保留物品 - 死亡时物品栏不掉落，重生后原样归还（防止掉落物被收走）").define("keepInventory", true);
         KEEP_EXPERIENCE = BUILDER.comment("死亡保留经验 - 死亡时经验不掉落，重生后原样归还").define("keepExperience", true);
         ITEM_GUARD = BUILDER.comment("掉落物保护 - 自己丢出的物品在保护时长内只有自己能拾取（防止被他人或收集类机制收走）").define("itemGuard", true);

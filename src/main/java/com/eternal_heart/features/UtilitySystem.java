@@ -18,6 +18,7 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
@@ -45,8 +46,10 @@ import net.minecraftforge.event.level.BlockEvent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * 便利系统 —— 掉落物磁铁、发光、自动火把 / 门 / 钓鱼、补货、无限桶、连锁挖矿、掉落转化。
@@ -285,6 +288,9 @@ public class UtilitySystem implements IFeature {
      */
     private static List<BlockPos> findVein(Level level, BlockState originState, BlockPos origin, int maxBlocks) {
         Block target = originState.getBlock();
+        // 同族矿脉：预先算一次起点的矿石子标签（forge:ores/iron 等），邻居判断时只做集合包含。
+        // 关闭「同族连通」或起点不是矿石时是空集，退回「必须是同一种方块」的旧语义。
+        Set<TagKey<Block>> families = oreFamilies(originState);
         // 配置下限已放开：maxBlocks 可能为负，用 long 计算避免 MIN_VALUE - 1 反向溢出成巨正值
         long rawLimit = Math.max(0L, (long) maxBlocks - 1);
         int limit = (int) Math.min(rawLimit, 65536); // 与历史实现一致：上限包含起点本身
@@ -313,7 +319,7 @@ public class UtilitySystem implements IFeature {
 
                 cursor.set(nx, ny, nz);
                 if (!level.hasChunkAt(cursor)) continue;
-                if (level.getBlockState(cursor).getBlock() != target) continue;
+                if (!veinConnected(level.getBlockState(cursor), target, families)) continue;
 
                 vein.add(encoded);
                 queue.enqueue(encoded);
@@ -323,6 +329,30 @@ public class UtilitySystem implements IFeature {
         List<BlockPos> result = new ArrayList<>(vein.size());
         for (int i = 0; i < vein.size(); i++) result.add(BlockPos.of(vein.getLong(i)));
         return result;
+    }
+
+    /**
+     * 该方块所属的矿石子标签（例如 {@code forge:ores/iron}）。
+     *
+     * <p>用于「同一矿脉」的连通判定：{@code forge:ores} 这个总标签在铁矿与金矿之间也共享，
+     * 直接拿它判连通会把整片不同种矿连成一条；因此只取 {@code ores/xxx} 这类<b>子标签</b>，
+     * 让「铁矿 + 深板岩铁矿 + 模组铁矿石」连成一片，而铁与金仍然分开。</p>
+     *
+     * @return 关闭同族连通、或起点不是矿石时返回空集（调用方据此退回精确匹配）
+     */
+    private static Set<TagKey<Block>> oreFamilies(BlockState state) {
+        if (!ConfigValues.get(EternalHeartConfig.VEIN_MATCH_TAGS)) return Set.of();
+        if (!state.is(FORGE_ORES_TAG)) return Set.of();
+        return state.getTags()
+                .filter(tag -> tag.location().getPath().startsWith("ores/"))
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /** 邻居是否属于同一条矿脉：同种方块，或与起点共享同一个矿石子标签。 */
+    private static boolean veinConnected(BlockState neighbor, Block target, Set<TagKey<Block>> families) {
+        if (neighbor.getBlock() == target) return true;
+        if (families.isEmpty()) return false;
+        return neighbor.getTags().anyMatch(families::contains);
     }
 
     private static boolean isOreBlock(BlockState state) {
@@ -424,6 +454,19 @@ public class UtilitySystem implements IFeature {
             } else if (pullRange > 0 && distanceSq <= pullSq) {
                 Vec3 pull = player.position().subtract(item.position()).normalize().scale(0.4);
                 item.setDeltaMovement(item.getDeltaMovement().add(pull));
+            }
+        }
+
+        // 经验球与物品共用同一吸附范围：打怪后散落的经验球同样会被吸过来
+        // （即时捡取范围内直接吸收，其余范围内给一个朝向玩家的速度）
+        if (!ConfigValues.get(EternalHeartConfig.MAGNET_PULL_XP)) return;
+        for (ExperienceOrb orb : Scan.of(player.level(), player, radius, ExperienceOrb.class, entity -> true)) {
+            double distanceSq = orb.distanceToSqr(player);
+            if (instantRange > 0 && distanceSq <= instantSq) {
+                orb.playerTouch(player);
+            } else if (pullRange > 0 && distanceSq <= pullSq) {
+                Vec3 pull = player.position().subtract(orb.position()).normalize().scale(0.4);
+                orb.setDeltaMovement(orb.getDeltaMovement().add(pull));
             }
         }
     }

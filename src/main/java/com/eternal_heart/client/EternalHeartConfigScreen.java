@@ -275,9 +275,9 @@ public class EternalHeartConfigScreen extends UiScreen {
                 for (String line : comment.split("\n")) {
                     if (line.isBlank()) continue;
                     // Forge 会为 defineInRange 自动追加 "Range: min ~ max"；本项目把上限放开到
-                    // ±Double.MAX_VALUE，于是提示里显示成 ±1.7976931348623157E308（天文数字，可读性为零）
-                    // → 替换成人话
-                    if (line.contains("1.7976931348623157E308")) {
+                    // ±Double.MAX_VALUE / Integer.MAX_VALUE，于是提示里显示成 ±1.7976931348623157E308
+                    // 或 2147483647（天文数字，可读性为零）→ 替换成人话
+                    if (line.contains("1.7976931348623157E308") || line.contains("2147483647")) {
                         lines.add(Component.translatable("config.eternal_heart.range.unlimited")
                                 .withStyle(style -> style.withColor(UiTheme.TEXT_DIM)));
                     } else {
@@ -626,6 +626,8 @@ public class EternalHeartConfigScreen extends UiScreen {
             case "CUSTOM_RECIPES" -> new RecipeEditorScreen(this, initial, onChange);
             // 自定义仪式配方：图形化编辑器（暗黑祭坛：激活物 + 产出 + 基座材料）
             case "CUSTOM_RITUALS" -> new RitualEditorScreen(this, initial, onChange);
+            // 附加被动效果：每条还带等级与时长，走专用选择器（支持其它模组的效果）
+            case "PASSIVE_EXTRA_EFFECTS" -> new PassiveEffectScreen(this, initial, onChange);
             default -> new EffectListScreen(this, fieldName, initial, onChange);
         });
     }

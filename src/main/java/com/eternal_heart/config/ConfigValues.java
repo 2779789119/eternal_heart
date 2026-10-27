@@ -34,9 +34,10 @@ public final class ConfigValues {
     private static volatile Map<String, Object> remoteValues = Map.of();
     private static final Set<String> SECONDS = Set.of("DEBUFF_CLEAR_INTERVAL", "EXTRA_HIT_COOLDOWN",
             "SPEED_BURST_DURATION", "DAMAGE_AURA_TICK_INTERVAL", "FURY_DECAY_TICKS", "AUTO_FISH_INTERVAL",
-            "LETHAL_GUARD_COOLDOWN", "ITEM_GUARD_TICKS");
+            "LETHAL_GUARD_COOLDOWN", "ITEM_GUARD_TICKS", "LETHAL_GUARD_IMMUNE");
     /** 允许「自由格式」条目的列表配置（元素不是纯资源 ID，另有专门校验规则）。 */
-    private static final Set<String> FREE_FORM_LISTS = Set.of("EXTRA_ATTRIBUTES", "CUSTOM_RECIPES", "CUSTOM_RITUALS");
+    private static final Set<String> FREE_FORM_LISTS = Set.of("EXTRA_ATTRIBUTES", "CUSTOM_RECIPES",
+            "CUSTOM_RITUALS", "PASSIVE_EXTRA_EFFECTS");
     private static final Set<String> PERCENT = Set.of("KNOCKBACK_RESIST", "MOVEMENT_SPEED",
             "DAMAGE_REDUCTION", "FALL_DAMAGE_RATIO", "REFLECT_RATIO", "EXPLOSION_RESIST",
             "DAMAGE_CAP_RATIO", "PROJECTILE_RESIST", "MAGIC_RESIST", "DODGE_CHANCE",
@@ -45,6 +46,7 @@ public final class ConfigValues {
             "AUTO_POTION_THRESHOLD", "LIGHTNING_REFLECT_CHANCE", "KILL_HEAL_RATIO", "GROWTH_AURA_CHANCE",
             "FURY_DAMAGE_PER_STACK", "FURY_LIFESTEAL", "LETHAL_GUARD_RATIO",
             "FURY_CRIT_CHANCE", "FURY_CRIT_DAMAGE_BONUS", "KILL_CHAIN_RATIO",
+            "EXECUTE_DAMAGE_BONUS", "EXECUTE_DAMAGE_THRESHOLD", "OVERFLOW_RATIO",
             // 修复：tooltip 走 percent()（×100）但此前不在白名单 → 面板填 30 会存成 30（倍率 30×）而不是 0.3
             "COOLDOWN_RATIO");
 

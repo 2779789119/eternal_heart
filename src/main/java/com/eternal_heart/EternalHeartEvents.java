@@ -11,6 +11,7 @@ import com.eternal_heart.features.FurySystem;
 import com.eternal_heart.features.MobilitySystem;
 import com.eternal_heart.features.OwnedEffects;
 import com.eternal_heart.features.OwnedShield;
+import com.eternal_heart.features.SuppressionSystem;
 import com.eternal_heart.features.SurvivalSystem;
 import com.eternal_heart.features.TimeStop;
 import com.eternal_heart.features.UtilitySystem;
@@ -23,6 +24,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.AbstractArrow;
@@ -36,9 +38,11 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.OnDatapackSyncEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.entity.ProjectileImpactEvent;
 import net.minecraftforge.event.entity.item.ItemTossEvent;
 import net.minecraftforge.event.entity.living.LivingDamageEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
@@ -51,6 +55,7 @@ import net.minecraftforge.event.entity.living.LivingAttackEvent;
 import net.minecraftforge.event.entity.living.LootingLevelEvent;
 import net.minecraftforge.event.entity.living.MobEffectEvent;
 import net.minecraftforge.event.entity.player.ArrowLooseEvent;
+import net.minecraftforge.event.entity.player.AttackEntityEvent;
 import net.minecraftforge.event.entity.player.CriticalHitEvent;
 import net.minecraftforge.event.entity.player.EntityItemPickupEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
@@ -108,6 +113,9 @@ public class EternalHeartEvents {
             // 卸下守护窗口（离槽瞬间开启 40 tick）：必须跑在佩戴判定之前，
             // 否则会先被判成「已卸下」而整段特性 tick 被跳过
             AegisSystem.tickUnequipGuard(player);
+            // 濒死无敌窗口同样必须在佩戴判定之前推进：死亡兜底救人的瞬间饰品已被取下，
+            // 受佩戴门控的话计数永远不递减（= 永久无敌）
+            AegisSystem.tickLethalImmunity(player);
             AegisSystem.restoreIfPending(player);
             CurioGuard.restoreIfPending(player);
         }
@@ -276,6 +284,12 @@ public class EternalHeartEvents {
     public static void onLivingHurt(LivingHurtEvent event) {
         if (!(event.getEntity() instanceof Player player)) return;
         if (player.level().isClientSide()) return;
+        // 濒死无敌窗口：致死保护 / 死亡兜底刚救回玩家，这一段里完全免伤。
+        // 不经过佩戴判定 —— 死亡兜底救人的瞬间饰品可能已被死亡流程取下。
+        if (AegisSystem.inLethalImmunity(player)) {
+            event.setCanceled(true);
+            return;
+        }
         if (!EquipTracker.isEquipped(player)) return;
         FeatureManager.dispatchPlayerHurt(player, event);
     }
@@ -288,7 +302,15 @@ public class EternalHeartEvents {
     public static void onLivingDamage(LivingDamageEvent event) {
         if (!(event.getEntity() instanceof Player player)) return;
         if (player.level().isClientSide()) return;
-        if (!EquipTracker.isEquipped(player)) return;
+
+        if (!EquipTracker.isEquipped(player)) {
+            // 卸下守护窗口：饰品刚离槽、生命上限已被撤掉，此刻佩戴判定必然是 false。
+            // 若其它模组正好在这一段里结算出致死伤害（按上限重算血量、夹取上限等实现），
+            // 没有这道钳制就是「摘下饰品当场被秒」。只跑致死保护，其余模块一律不介入。
+            if (AegisSystem.withinUnequipGuard(player)) AegisSystem.guardLethal(player, event);
+            return;
+        }
+
         FeatureManager.dispatchFinalDamage(player, event);
         OwnedShield.reconcile(player);
         FurySystem.onDamageResolved(player, event);
@@ -329,12 +351,34 @@ public class EternalHeartEvents {
             }
         }
 
-        // 玩家攻击 → 战斗模块
+        // 玩家攻击 → 战斗模块（被完全拦下的攻击也照样记账，由结算后核对补足）
         if (event.getSource().getEntity() instanceof Player player && EquipTracker.isEquipped(player)) {
             FeatureManager.dispatchPlayerAttack(player, event);
-            // 攻击在事件阶段就被完全拦下（BOSS 无敌 / 闪避机制）：可选地改用真实伤害
-            if (event.isCanceled()) CombatSystem.pierceBlockedAttack(player, event);
         }
+    }
+
+    /**
+     * 玩家近战：在 {@code Player.attack} 的第一行记账，早于目标的任何 hurt() 重写。
+     *
+     * <p>目标在自己的 hurt() 里直接 return false（阶段免伤 / 无敌帧）时，后面所有伤害事件都不会
+     * 触发；只有这里能看到「这一刀本该打多少」，结算后核对才有账可对。</p>
+     */
+    @SubscribeEvent(priority = EventPriority.LOW)
+    public static void onAttackEntity(AttackEntityEvent event) {
+        Player player = event.getEntity();
+        if (player.level().isClientSide()) return;
+        if (!EquipTracker.isEquipped(player)) return;
+        CombatSystem.observeMeleeAttack(player, event.getTarget());
+    }
+
+    /** 远程：弹射物命中实体时记账，同样早于 hurt()（只取我方弹射物，见 CombatSystem）。 */
+    @SubscribeEvent(priority = EventPriority.LOW)
+    public static void onProjectileImpact(ProjectileImpactEvent event) {
+        Projectile projectile = event.getProjectile();
+        if (projectile.level().isClientSide()) return;
+        if (!(event.getRayTraceResult() instanceof EntityHitResult hit)) return;
+        if (!(hit.getEntity() instanceof LivingEntity target)) return;
+        CombatSystem.observeProjectileHit(projectile, target);
     }
 
     @SubscribeEvent(priority = EventPriority.LOW)
@@ -448,12 +492,20 @@ public class EternalHeartEvents {
 
     @SubscribeEvent
     public static void onEffectApplicable(MobEffectEvent.Applicable event) {
+        MobEffect effect = event.getEffectInstance().getEffect();
+
+        // 被压制（禁疗）的目标：从施加阶段就拒绝治疗类效果（再生 / 吸收 / 生命提升 / 瞬间治疗）。
+        // 必须放在「玩家 + 佩戴」门控之前 —— 被压制的基本都是怪物，吃了那个门控就永远不生效。
+        if (SuppressionSystem.blocksHealingEffect(event.getEntity(), effect)) {
+            event.setResult(Event.Result.DENY);
+            return;
+        }
+
         if (!(event.getEntity() instanceof Player player)) return;
         if (!EquipTracker.isEquipped(player)) return;
         if (!ConfigValues.get(EternalHeartConfig.DEBUFF_GUARD)) return; // 功能已关闭
 
         // 与清扫层共用同一判定（预编译规则集），保证黑名单 / 白名单在两层行为完全一致
-        MobEffect effect = event.getEffectInstance().getEffect();
         if (DefenseSystem.isDebuffBlocked(effect)) {
             event.setResult(Event.Result.DENY);
         }

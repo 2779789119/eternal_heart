@@ -3,19 +3,26 @@ package com.eternal_heart.features;
 import com.eternal_heart.EternalHeartConfig;
 import com.eternal_heart.config.ConfigValues;
 import com.eternal_heart.core.PlayerScoped;
+import com.eternal_heart.core.Ticker;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.entity.living.LivingDamageEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingEvent.LivingTickEvent;
@@ -129,8 +136,40 @@ public class AegisSystem implements IFeature {
      */
     private static final PlayerScoped<Integer> UNEQUIP_GUARD_LEFT = new PlayerScoped<>();
 
+    /**
+     * 濒死无敌窗口（剩余 tick 数）。
+     *
+     * <p>致死保护 / 死亡兜底只保证「这一击不致死」，玩家往往紧接着被下一击打死
+     * （群体围攻、持续伤害、多段攻击）。这里在一次拦截之后给出一段完全免伤的窗口，
+     * 与不死图腾的语义一致。</p>
+     *
+     * <p>同样用「剩余 tick 计数」而不是时间戳：跨维度时各维度的 gameTime 基准不同。</p>
+     */
+    private static final PlayerScoped<Integer> LETHAL_IMMUNE_LEFT = new PlayerScoped<>();
+
+    /**
+     * 最后一次「安全落点」（带维度）。
+     *
+     * <p>虚空拦截要把玩家送回一个能站住的地方，而不是简单地抬到建筑上限
+     * （那等于从高空坠落）。只在「站住、没在高速移动、不在世界底部」时采样。</p>
+     */
+    private static final PlayerScoped<SafeSpot> SAFE_SPOT = new PlayerScoped<>();
+
+    /** 安全落点采样间隔（tick）：标准移动下 10 tick 只走 2~3 格，精度足够。 */
+    private static final int SAFE_SPOT_INTERVAL = 10;
+
+    /** 采样安全落点时的水平速度平方上限（约 1.7 格/tick）：飞行 / 弹射途中不采样。 */
+    private static final double SAFE_SPOT_MAX_HORIZONTAL_SPEED_SQR = 3.0;
+
+    /** 安全落点的最低高度余量：低于「世界底部 + 该值」时不采样（那里已经是虚空边缘）。 */
+    private static final int SAFE_SPOT_MIN_HEIGHT_MARGIN = 8;
+
+    /** 安全落点快照。 */
+    private record SafeSpot(ResourceKey<Level> dimension, double x, double y, double z) {
+    }
+
     /** 卸下守护窗口长度（tick）：覆盖 Curios 重算上限 + 其它模组同一 tick 的跟进处理。 */
-    private static final int UNEQUIP_GUARD_TICKS = 40;
+    private static final int UNEQUIP_GUARD_TICKS = 100;
 
     /**
      * 该玩家正处在「真实死亡流程」中（死亡事件已发生、还没重生）。
@@ -196,6 +235,7 @@ public class AegisSystem implements IFeature {
         recordHealthRatio(player);
         guardHealth(player);
         guardMaxHealth(player);
+        recordSafeSpot(player);
     }
 
     /** 重新戴上：卸下守护窗口立即失效，恢复常规佩戴保护。 */
@@ -216,6 +256,10 @@ public class AegisSystem implements IFeature {
         HEALTH_BASELINE.remove(player.getUUID());
         LETHAL_STATE.remove(player.getUUID());
         PENDING_UNEQUIP.remove(player.getUUID());
+        // 饰品已经不在身上：濒死无敌窗口必须一并失效，
+        // 否则「刚被救回 → 摘下饰品」会白白继承一整段无敌
+        LETHAL_IMMUNE_LEFT.remove(player.getUUID());
+        SAFE_SPOT.remove(player.getUUID());
 
         // 属性撤下时生命上限会从「饰品加成的巨大值」掉回基础值，而原版并不会把当前血量
         // 一起夹回去（见 setHealth / RangedAttribute 的实现）——残留的巨大血量会让原版血条
@@ -541,9 +585,11 @@ public class AegisSystem implements IFeature {
         watch.damageAllowance = 0f;
     }
 
-    /** 最终伤害结算：执行致死保护，并登记「合法伤害」与硬锁额度。 */
+    /** 最终伤害结算：执行虚空拦截与致死保护，并登记「合法伤害」与硬锁额度。 */
     @Override
     public void onFinalDamage(Player player, LivingDamageEvent event) {
+        // 虚空优先：它负责「把人送回安全落点」，拦下之后没必要再走致死保护
+        if (guardVoid(player, event)) return;
         guardLethal(player, event);
         if (event.isCanceled() || event.getAmount() <= 0) return;
 
@@ -634,11 +680,30 @@ public class AegisSystem implements IFeature {
     //  3. 致死保护
     // ============================================================
 
-    private void guardLethal(Player player, LivingDamageEvent event) {
+    /**
+     * 致死保护：把「这一击必死」的伤害压到只扣到保留比例为止。
+     *
+     * <p><b>可被外部直接调用</b>（卸下守护窗口内佩戴判定已是 false，事件层仍需要这道保护，
+     * 见 {@code EternalHeartEvents#onLivingDamage}）。</p>
+     *
+     * <p>两类「通常不在保护范围」的伤害由配置决定：</p>
+     * <ul>
+     *   <li><b>虚空伤害</b>（{@code fell_out_of_world}）永远交给出「虚空拦截」处理 ——
+     *       在这里再拦一次会让玩家卡在虚空里无限挨打；</li>
+     *   <li><b>无视无敌的强制击杀</b>（{@code /kill} 的 {@code generic_kill} 等）
+     *       在「强制击杀兜底」开启后同样受保护。</li>
+     * </ul>
+     */
+    public static void guardLethal(Player player, LivingDamageEvent event) {
         if (event.isCanceled() || event.getAmount() <= 0) return;
         if (!ConfigValues.get(EternalHeartConfig.LETHAL_GUARD)) return;
-        // 无视无敌的伤害不在保护范围（/kill、虚空等强制击杀途径）
-        if (event.getSource().is(DamageTypeTags.BYPASSES_INVULNERABILITY)) return;
+
+        DamageSource source = event.getSource();
+        // 虚空伤害：由虚空拦截专管（否则致死保护会把人钉在虚空里反复挨打）
+        if (source.is(DamageTypes.FELL_OUT_OF_WORLD)) return;
+        // 无视无敌的伤害（/kill 等）：仅在「强制击杀兜底」开启时纳入保护
+        if (source.is(DamageTypeTags.BYPASSES_INVULNERABILITY)
+                && !ConfigValues.get(EternalHeartConfig.KILL_GUARD)) return;
 
         float health = player.getHealth();
         if (event.getAmount() < health) return; // 伤害不足以致命
@@ -653,11 +718,109 @@ public class AegisSystem implements IFeature {
         event.setAmount(Math.max(0f, health - keep));
 
         state.readyAt = now + ConfigValues.get(EternalHeartConfig.LETHAL_GUARD_COOLDOWN);
+        grantLethalImmunity(player);
 
-        player.displayClientMessage(
-                Component.translatable("message.eternal_heart.lethal_guard"), true);
+        player.displayClientMessage(Component.translatable(source.is(DamageTypeTags.BYPASSES_INVULNERABILITY)
+                ? "message.eternal_heart.kill_guard" : "message.eternal_heart.lethal_guard"), true);
         player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
                 SoundEvents.TOTEM_USE, SoundSource.PLAYERS, 1.0F, 1.0F);
+    }
+
+    // ============================================================
+    //  濒死无敌窗口
+    // ============================================================
+
+    /** 玩家是否仍处在致死保护 / 死亡兜底给出的无敌窗口内。 */
+    public static boolean inLethalImmunity(Player player) {
+        Integer left = LETHAL_IMMUNE_LEFT.get(player.getUUID());
+        return left != null && left > 0;
+    }
+
+    /**
+     * 每 tick 推进无敌窗口。
+     *
+     * <p><b>必须无条件调用</b>（由事件层在佩戴判定之前执行）：死亡兜底救人的瞬间饰品已被取下，
+     * 若受佩戴判定门控，这个计数就永远不递减 —— 表现为「被救过一次之后永久无敌」。</p>
+     */
+    public static void tickLethalImmunity(Player player) {
+        if (player.level().isClientSide()) return;
+        Integer left = LETHAL_IMMUNE_LEFT.get(player.getUUID());
+        if (left == null) return;
+        if (left <= 1) LETHAL_IMMUNE_LEFT.remove(player.getUUID());
+        else LETHAL_IMMUNE_LEFT.put(player.getUUID(), left - 1);
+    }
+
+    /** 开启无敌窗口（配置为 0 / 负时不做任何事）。 */
+    private static void grantLethalImmunity(Player player) {
+        int seconds = ConfigValues.get(EternalHeartConfig.LETHAL_GUARD_IMMUNE);
+        if (seconds <= 0) return;
+        // 秒 → tick 用 long 换算：配置上限放开后 int 乘法会溢出（表现为窗口瞬间消失）
+        long ticks = Math.min(Integer.MAX_VALUE, (long) seconds * 20L);
+        LETHAL_IMMUNE_LEFT.put(player.getUUID(), (int) ticks);
+    }
+
+    // ============================================================
+    //  虚空拦截
+    // ============================================================
+
+    /**
+     * 虚空拦截：取消掉出世界的伤害，并把玩家送回最后一次安全落点。
+     *
+     * <p>为什么必须拦在伤害阶段而不是只在 tick 阶段兜底：虚空伤害每 tick 都触发，
+     * 单纯在底部传送（{@code SurvivalSystem#applyVoidRescue}）会先让玩家掉血几 tick，
+     * 极端情况下（血量很低）还没来得及传送就已经死了。</p>
+     *
+     * @return true = 本次伤害已被本机制处理（调用方应停止后续处理）
+     */
+    private static boolean guardVoid(Player player, LivingDamageEvent event) {
+        if (!ConfigValues.get(EternalHeartConfig.VOID_GUARD)) return false;
+        if (!event.getSource().is(DamageTypes.FELL_OUT_OF_WORLD)) return false;
+
+        event.setCanceled(true);
+        rescueFromVoid(player);
+        player.displayClientMessage(
+                Component.translatable("message.eternal_heart.void_guard"), true);
+        return true;
+    }
+
+    /** 把玩家送回最后一次安全落点；没有落点（或维度不符）时抬到建筑上限。 */
+    private static void rescueFromVoid(Player player) {
+        SafeSpot spot = SAFE_SPOT.get(player.getUUID());
+        Level level = player.level();
+
+        if (spot != null && spot.dimension().equals(level.dimension())) {
+            if (player instanceof ServerPlayer serverPlayer) {
+                serverPlayer.teleportTo(serverPlayer.serverLevel(),
+                        spot.x(), spot.y(), spot.z(), serverPlayer.getYRot(), serverPlayer.getXRot());
+            } else {
+                player.teleportTo(spot.x(), spot.y(), spot.z());
+            }
+        } else {
+            // 没有可用落点：与生存系统的虚空救援保持一致（抬到建筑上限，配合摔落免疫不会摔死）
+            player.teleportTo(player.getX(), level.getMaxBuildHeight(), player.getZ());
+        }
+        player.setDeltaMovement(Vec3.ZERO);
+        player.fallDistance = 0;
+        player.clearFire();
+    }
+
+    /**
+     * 采样「安全落点」：站住、没在高速移动、不在世界底部时才记录。
+     *
+     * <p>只走佩戴者的 tick 路径，节流 {@link #SAFE_SPOT_INTERVAL} tick，
+     * 常态开销是每 0.5 秒一次地面判定。</p>
+     */
+    private static void recordSafeSpot(Player player) {
+        if (player.level().isClientSide()) return;
+        if (!player.isAlive() || !player.onGround()) return;
+        if (!Ticker.due(player.getUUID(), player.level().getGameTime(), SAFE_SPOT_INTERVAL)) return;
+
+        Level level = player.level();
+        if (player.getY() < level.getMinBuildHeight() + SAFE_SPOT_MIN_HEIGHT_MARGIN) return;
+        if (player.getDeltaMovement().horizontalDistanceSqr() > SAFE_SPOT_MAX_HORIZONTAL_SPEED_SQR) return;
+
+        Vec3 pos = player.position();
+        SAFE_SPOT.put(player.getUUID(), new SafeSpot(level.dimension(), pos.x(), pos.y(), pos.z()));
     }
 
     /**
@@ -679,8 +842,13 @@ public class AegisSystem implements IFeature {
         // 此刻佩戴判定已经是 false，靠 GUARDED_AT_DEATH 等不到登记
         if (!guardedAtDeath && !withinUnequipGuard(player)) return false;
         if (!ConfigValues.get(EternalHeartConfig.DEATH_GUARD)) return false;
-        // 无视无敌的伤害（/kill、虚空等强制击杀途径）不在保护范围
-        if (event.getSource().is(DamageTypeTags.BYPASSES_INVULNERABILITY)) return false;
+
+        DamageSource source = event.getSource();
+        // 虚空伤害：交给虚空拦截（在这里兜底会让人卡在虚空里反复触发）
+        if (source.is(DamageTypes.FELL_OUT_OF_WORLD)) return false;
+        // 无视无敌的强制击杀（/kill 等）：仅在「强制击杀兜底」开启时纳入保护
+        if (source.is(DamageTypeTags.BYPASSES_INVULNERABILITY)
+                && !ConfigValues.get(EternalHeartConfig.KILL_GUARD)) return false;
 
         long now = player.level().getGameTime();
         LethalState state = LETHAL_STATE.compute(player.getUUID(), LethalState::new);
@@ -695,9 +863,10 @@ public class AegisSystem implements IFeature {
         applyOwnedHealth(player, restored);
         player.clearFire();
         state.readyAt = now + ConfigValues.get(EternalHeartConfig.LETHAL_GUARD_COOLDOWN);
+        grantLethalImmunity(player);
 
-        player.displayClientMessage(
-                Component.translatable("message.eternal_heart.death_guard"), true);
+        player.displayClientMessage(Component.translatable(source.is(DamageTypeTags.BYPASSES_INVULNERABILITY)
+                ? "message.eternal_heart.kill_guard" : "message.eternal_heart.death_guard"), true);
         player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
                 SoundEvents.TOTEM_USE, SoundSource.PLAYERS, 1.0F, 1.0F);
         event.setCanceled(true);
@@ -770,6 +939,11 @@ public class AegisSystem implements IFeature {
         DYING.remove(newPlayer.getUUID());
         GUARDED_AT_DEATH.remove(oldPlayer.getUUID());
         GUARDED_AT_DEATH.remove(newPlayer.getUUID());
+        // 真死过一次：上一轮的濒死无敌窗口与安全落点都不该带到新身体上
+        LETHAL_IMMUNE_LEFT.remove(oldPlayer.getUUID());
+        LETHAL_IMMUNE_LEFT.remove(newPlayer.getUUID());
+        SAFE_SPOT.remove(oldPlayer.getUUID());
+        SAFE_SPOT.remove(newPlayer.getUUID());
 
         if (!wasDeath) return;
 
@@ -860,6 +1034,8 @@ public class AegisSystem implements IFeature {
         HEALTH_RATIO.remove(player.getUUID());
         PENDING_UNEQUIP.remove(player.getUUID());
         UNEQUIP_GUARD_LEFT.remove(player.getUUID());
+        LETHAL_IMMUNE_LEFT.remove(player.getUUID());
+        SAFE_SPOT.remove(player.getUUID());
     }
 
     // ============================================================

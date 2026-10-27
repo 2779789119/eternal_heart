@@ -20,6 +20,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.loot.LootContext;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import top.theillusivec4.curios.api.SlotContext;
 import top.theillusivec4.curios.api.type.capability.ICurioItem;
 
@@ -98,8 +99,32 @@ public class EternalHeartItem extends Item implements ICurioItem {
         return HeartFusion.isEnderMask(slotContext, enderMan, stack);
     }
 
+    /**
+     * 富文本上限保护：把一行提示压平成单个纯文本组件。
+     *
+     * <p>The Fool 的字体库 {@code thefool_font} 在 {@code StyledTextParagraph} 里硬编码了
+     * 「一段最多 128 个 span」，超过就直接抛 {@code IllegalArgumentException}；而 span 是
+     * {@code Component} 里**每个样式片段**（{@code FormattedText.visit} 每回调一次算一个），
+     * translatable 的每个 {@code %s} 参数都会被拆成独立片段。原本一行由十几个 sibling
+     * （分隔符 + 各条目）拼成、单行就有几十个 span，叠上其它模组的行很容易触顶，
+     * 且异常发生在渲染线程、无人捕获 → 客户端直接崩。
+     *
+     * <p>这里先取到最终显示的文本，再用 {@code literal} 重新包一层：一行只留 1 个 span，
+     * 玩家看到的文字与颜色完全不变。</p>
+     */
+    private static MutableComponent flat(Component component) {
+        String resolved = component.getString();
+        // 语言表还没加载（服务端等）时 getString() 会退化成 key 本身，此时保持原组件不压平
+        if (resolved.startsWith("tooltip.eternal_heart.") || resolved.startsWith("config.eternal_heart."))
+            return component.copy();
+        return Component.literal(resolved);
+    }
+
     private static MutableComponent text(String key, Object... args) {
-        return Component.translatable("tooltip.eternal_heart." + key, args);
+        Object[] resolved = new Object[args.length];
+        for (int i = 0; i < args.length; i++)
+            resolved[i] = args[i] instanceof Component component ? component.getString() : args[i];
+        return flat(Component.translatable("tooltip.eternal_heart." + key, resolved));
     }
 
     private static String number(double value) {
@@ -135,18 +160,33 @@ public class EternalHeartItem extends Item implements ICurioItem {
 
     private static void row(List<Component> tooltip, ChatFormatting color, List<Component> parts) {
         if (parts.isEmpty()) return;
-        MutableComponent joined = Component.empty();
+        // 直接拼字符串再包成单个 literal：见 flat()，行内 siblings 每个都是一段 span
+        StringBuilder joined = new StringBuilder();
         for (Component part : parts) {
-            if (!joined.getSiblings().isEmpty()) joined.append("  |  ");
-            joined.append(part);
+            if (joined.length() > 0) joined.append("  |  ");
+            joined.append(part.getString());
         }
-        tooltip.add(joined.withStyle(color));
+        tooltip.add(Component.literal(joined.toString()).withStyle(color));
         parts.clear();
+    }
+
+    /**
+     * 是否处于「展开」状态（按住 Shift）。
+     *
+     * <p>服务端没有 {@code Screen}，用 {@link FMLEnvironment#dist} 短路，避免在服务端加载客户端类。</p>
+     */
+    private static boolean expanded() {
+        return !FMLEnvironment.dist.isClient() || com.eternal_heart.client.tooltip.EternalHeartTooltipState.expanded();
     }
 
     @Override
     public void appendHoverText(ItemStack stack, @Nullable Level level, List<Component> tooltip, TooltipFlag flag) {
         tooltip.add(text("flavor").withStyle(ChatFormatting.GOLD));
+        // 收起状态只有这一句；客户端会把它换成上下浮动、淡入淡出的动态行
+        if (!expanded()) {
+            super.appendHoverText(stack, level, tooltip, flag);
+            return;
+        }
         tooltip.add(Component.empty());
         tooltip.add(text("crit1").withStyle(ChatFormatting.GOLD));
         tooltip.add(text("crit2", value("FURY_MAX_STACKS"), percent("FURY_DAMAGE_PER_STACK"), percent("FURY_LIFESTEAL")).withStyle(ChatFormatting.GOLD));
@@ -207,6 +247,10 @@ public class EternalHeartItem extends Item implements ICurioItem {
         if (positive("LOW_HP_THRESHOLD")) parts.add(text("berserk", percent("LOW_HP_THRESHOLD"), value("LOW_HP_DAMAGE_MULT")));
         if (positive("BOSS_DAMAGE_BONUS")) parts.add(text("boss", percent("BOSS_DAMAGE_BONUS")));
         if (positive("EXECUTE_THRESHOLD")) parts.add(text("execute", percent("EXECUTE_THRESHOLD")));
+        if (positive("EXECUTE_DAMAGE_BONUS") && positive("EXECUTE_DAMAGE_THRESHOLD"))
+            parts.add(text("execute_damage", percent("EXECUTE_DAMAGE_THRESHOLD"), percent("EXECUTE_DAMAGE_BONUS")));
+        if (positive("OVERFLOW_RATIO") && ((Number) setting("OVERFLOW_MAX_TARGETS")).intValue() > 0)
+            parts.add(text("overflow", percent("OVERFLOW_RATIO"), value("OVERFLOW_MAX_TARGETS")));
         if (positive("IGNITE_CHANCE")) parts.add(text("ignite", percent("IGNITE_CHANCE"), value("IGNITE_DURATION")));
         if (on("SUPPRESSION_ENABLED")) {
             if (on("SUPPRESSION_ANTI_HEAL")) parts.add(text("suppression", value("SUPPRESSION_DURATION")));
@@ -234,6 +278,10 @@ public class EternalHeartItem extends Item implements ICurioItem {
         if (on("HEALTH_GUARD")) parts.add(text("guard_health"));
         if (on("MAX_HEALTH_GUARD")) parts.add(text("guard_max_health"));
         if (on("LETHAL_GUARD")) parts.add(text("guard_lethal", percent("LETHAL_GUARD_RATIO")));
+        if (on("LETHAL_GUARD") && ((Number) setting("LETHAL_GUARD_IMMUNE")).intValue() > 0)
+            parts.add(text("guard_immune", number(((Number) setting("LETHAL_GUARD_IMMUNE")).doubleValue())));
+        if (on("KILL_GUARD")) parts.add(text("guard_kill"));
+        if (on("VOID_GUARD")) parts.add(text("guard_void"));
         if (on("KEEP_INVENTORY") || on("KEEP_EXPERIENCE")) parts.add(text("guard_keep"));
         if (on("ITEM_GUARD")) parts.add(text("guard_item"));
         if (on("CURIO_KEEP_ON_DEATH")) parts.add(text("curio_keep"));

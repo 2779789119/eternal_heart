@@ -96,12 +96,24 @@ public final class OwnedEffects {
         Entry entry = ledger.entries.get(effect);
         if (entry != null && entry.amplifier() != amplifier) {
             release(player, effect);
+            entry = null; // 记录已删除，下面的判定按「无记录」走
         }
 
         MobEffectInstance current = player.getEffect(effect);
-        if (current != null && current.getAmplifier() >= amplifier
-                && (current.isInfiniteDuration() || current.getDuration() > refreshBelow)) {
-            return;
+        if (current != null && current.getAmplifier() >= amplifier) {
+            if (current.isInfiniteDuration()) {
+                // 现有效果是永久：目标也永久（或这条永久效果来自外部）→ 直接满足。
+                // 目标变成有限时长时，必须把我们之前施加的永久效果收回，否则原版
+                // addEffect 只会在「新时长更长」时更新，-1 永远不会被有限时长覆盖
+                if (duration < 0 || entry == null) return;
+                release(player, effect);
+                current = player.getEffect(effect);
+                if (current != null && current.getAmplifier() >= amplifier && current.isInfiniteDuration()) {
+                    return; // 收回后归还的外部效果本身就是永久：由外部继续提供
+                }
+            } else if (current.getDuration() > refreshBelow) {
+                return;
+            }
         }
 
         if (!ledger.entries.containsKey(effect)) {

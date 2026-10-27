@@ -2,6 +2,7 @@ package com.eternal_heart.features;
 
 import com.eternal_heart.EternalHeartConfig;
 import com.eternal_heart.config.ConfigValues;
+import com.eternal_heart.core.PassiveEffects;
 import com.eternal_heart.core.PlayerScoped;
 import com.eternal_heart.core.Ticker;
 import net.minecraft.core.BlockPos;
@@ -111,29 +112,55 @@ public class SurvivalSystem implements IFeature {
         final int duration = ConfigValues.get(EternalHeartConfig.PASSIVE_EFFECT_INFINITE) ? -1 : 1200;
         final int refreshBelow = 600;
 
-        OwnedEffects.maintain(player, MobEffects.NIGHT_VISION,
+        // 附加被动效果（可来自任意模组）：时长 -1 = 永久；有限时长在剩余不足 1/4 时续期，
+        // 避免图标闪烁又不至于每 tick 重发效果包
+        final List<PassiveEffects.Entry> extras = PassiveEffects.all();
+
+        maintainBuiltin(player, extras, MobEffects.NIGHT_VISION,
                 ConfigValues.get(EternalHeartConfig.NIGHT_VISION), duration,
                 ConfigValues.get(EternalHeartConfig.NIGHT_VISION_LEVEL), refreshBelow);
-        OwnedEffects.maintain(player, MobEffects.WATER_BREATHING,
+        maintainBuiltin(player, extras, MobEffects.WATER_BREATHING,
                 ConfigValues.get(EternalHeartConfig.WATER_BREATHING), duration,
                 ConfigValues.get(EternalHeartConfig.WATER_BREATHING_LEVEL), refreshBelow);
 
         int haste = ConfigValues.get(EternalHeartConfig.HASTE_LEVEL);
-        OwnedEffects.maintain(player, MobEffects.DIG_SPEED, haste > 0, duration, Math.max(0, haste - 1), refreshBelow);
+        maintainBuiltin(player, extras, MobEffects.DIG_SPEED, haste > 0, duration,
+                Math.max(0, haste - 1), refreshBelow);
 
         // 抗火有两种来源：常驻配置，或熔岩行走时 MobilitySystem 授予的短时保护
         boolean passiveFire = ConfigValues.get(EternalHeartConfig.FIRE_RESISTANCE_POTION);
         boolean lavaFire = ConfigValues.get(EternalHeartConfig.LAVA_WALKING)
                 && player.getPersistentData().getLong(MobilitySystem.LAVA_RESIST_UNTIL) > tick;
-        OwnedEffects.maintain(player, MobEffects.FIRE_RESISTANCE, passiveFire || lavaFire,
+        maintainBuiltin(player, extras, MobEffects.FIRE_RESISTANCE, passiveFire || lavaFire,
                 passiveFire ? duration : 20, 0, passiveFire ? refreshBelow : 5);
 
-        OwnedEffects.maintain(player, MobEffects.SATURATION,
+        maintainBuiltin(player, extras, MobEffects.SATURATION,
                 ConfigValues.get(EternalHeartConfig.SATURATION), duration,
                 ConfigValues.get(EternalHeartConfig.SATURATION_LEVEL), refreshBelow);
-        OwnedEffects.maintain(player, MobEffects.LUCK,
+        maintainBuiltin(player, extras, MobEffects.LUCK,
                 ConfigValues.get(EternalHeartConfig.PERMANENT_LUCK), duration,
                 ConfigValues.get(EternalHeartConfig.PERMANENT_LUCK_LEVEL), refreshBelow);
+
+        for (PassiveEffects.Entry extra : extras) {
+            int extraDuration = extra.duration();
+            OwnedEffects.maintain(player, extra.effect(), true, extraDuration, extra.amplifier(),
+                    extraDuration < 0 ? 0 : Math.max(1, extraDuration / 4));
+        }
+    }
+
+    /**
+     * 维持一个内置被动效果；若同一效果也出现在「附加被动效果」列表里，直接跳过。
+     *
+     * <p>两个来源同时维持同一效果会互相拆台：{@code OwnedEffects} 的账本按 ≤1 条记录/效果，
+     * 等级不一致时每次 {@code maintain} 都要先释放再重记 —— 表现为效果每 tick 被移除又加回、
+     * 图标狂闪、效果包刷屏。这里约定「显式配置优先」：附加列表里写了的，就由它独占地管。</p>
+     */
+    private static void maintainBuiltin(Player player, List<PassiveEffects.Entry> extras, MobEffect effect,
+                                        boolean enabled, int duration, int amplifier, int refreshBelow) {
+        for (PassiveEffects.Entry extra : extras) {
+            if (extra.effect() == effect) return;
+        }
+        OwnedEffects.maintain(player, effect, enabled, duration, amplifier, refreshBelow);
     }
 
     /** 氧气锁定：直接把氧气值钉在满值（不依赖水下呼吸效果，被清效果也不影响）。 */

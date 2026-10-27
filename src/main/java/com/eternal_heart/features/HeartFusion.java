@@ -92,10 +92,26 @@ public final class HeartFusion {
     //  读写 / 合成
     // ============================================================
 
-    /** 该物品是否可以融合（带 Curios 能力）。 */
+    /**
+     * 该物品是否可以融合（能不能进饰品栏）。
+     *
+     * <p>判定覆盖三种情况：</p>
+     * <ol>
+     *   <li>物品自己实现了 {@link ICurioItem}；</li>
+     *   <li>Curios 给物品挂了 {@code ICurio} 能力（含其它模组注册的包装器）；</li>
+     *   <li><b>只带 {@code curios:*} 槽位标签</b>的物品 —— Curios 允许它们放进对应槽位，
+     *       但不会挂能力。整合包 / 兼容模组给别的模组物品加标签时这就是常态，
+     *       典型例子是机械动力的工程护目镜（{@code create:goggles}，标签 {@code curios:charm}）。</li>
+     * </ol>
+     *
+     * <p>第 3 类融合后没有回调 / 属性可转发（本来就没有 {@code ICurio} 能力），
+     * 但其它模组用「查询玩家是否佩戴了某物品」判定效果时能看到它 —— 这正是护目镜这类
+     * 物品想要的。</p>
+     */
     public static boolean isCurio(ItemStack stack) {
         if (stack.isEmpty()) return false;
         if (stack.getItem() instanceof ICurioItem) return true;
+        if (!CuriosApi.getCuriosHelper().getCurioTags(stack.getItem()).isEmpty()) return true;
         return CuriosApi.getCurio(stack).isPresent();
     }
 
@@ -109,10 +125,21 @@ public final class HeartFusion {
         return entries(heart).size();
     }
 
-    /** 当前是否还能继续融合（功能开启且未达上限）。 */
+    /** 当前是否还能再融合 1 个（功能开启且未达上限）。 */
     public static boolean canFuse(ItemStack heart) {
-        return ConfigValues.get(EternalHeartConfig.FUSION_ENABLED)
-                && count(heart) < ConfigValues.get(EternalHeartConfig.FUSION_LIMIT);
+        return canFuse(heart, 1);
+    }
+
+    /**
+     * 当前是否还能再融合 {@code amount} 个。
+     *
+     * <p>用于一次投入多件饰品时的整批校验：只要总量会超上限，整次合成就应当不成立，
+     * 而不是先融进去几个、剩下的悄悄丢掉。</p>
+     */
+    public static boolean canFuse(ItemStack heart, int amount) {
+        if (amount <= 0) return false;
+        if (!ConfigValues.get(EternalHeartConfig.FUSION_ENABLED)) return false;
+        return (long) count(heart) + amount <= ConfigValues.get(EternalHeartConfig.FUSION_LIMIT);
     }
 
     /**
@@ -533,6 +560,19 @@ public final class HeartFusion {
     //  提示框
     // ============================================================
 
+    /**
+     * 压平成单个纯文本组件。
+     *
+     * <p>{@code thefool_font} 的 {@code StyledTextParagraph} 硬编码「一段最多 128 个 span」，
+     * 超过即抛异常且发生在渲染线程（客户端崩溃）；span 按 {@code Component} 的样式片段计数，
+     * translatable 的每个 {@code %s} 参数都算一段。一行只用 1 个 span 就永远不会撞上限。</p>
+     */
+    private static MutableComponent flat(Component component) {
+        String resolved = component.getString();
+        if (resolved.startsWith("tooltip.eternal_heart.")) return component.copy();
+        return Component.literal(resolved);
+    }
+
     /** 融合相关的提示行（未融合且功能开启时给一条合成提示）。 */
     public static List<Component> tooltip(ItemStack heart) {
         List<Fused> fused = fused(heart);
@@ -540,28 +580,26 @@ public final class HeartFusion {
 
         if (fused.isEmpty()) {
             if (ConfigValues.get(EternalHeartConfig.FUSION_ENABLED)) {
-                lines.add(Component.translatable("tooltip.eternal_heart.fusion_hint")
+                lines.add(flat(Component.translatable("tooltip.eternal_heart.fusion_hint"))
                         .withStyle(ChatFormatting.DARK_GRAY));
             }
             return lines;
         }
 
-        lines.add(Component.translatable("tooltip.eternal_heart.fused_header", fused.size())
+        lines.add(flat(Component.translatable("tooltip.eternal_heart.fused_header", fused.size()))
                 .withStyle(ChatFormatting.LIGHT_PURPLE));
+        String offSuffix = flat(Component.translatable("tooltip.eternal_heart.fused_entry_off")).getString();
         int shown = Math.min(fused.size(), MAX_TOOLTIP_LINES);
         for (int i = 0; i < shown; i++) {
             Fused entry = fused.get(i);
-            MutableComponent line = Component.literal(" · ").append(entry.stack().getHoverName());
-            if (entry.enabled()) {
-                lines.add(line.withStyle(ChatFormatting.GRAY));
-            } else {
-                // 关掉的条目仍然列出（玩家自己关的，需要随时看得见），只是标灰 + 后缀
-                lines.add(line.copy().append(Component.translatable("tooltip.eternal_heart.fused_entry_off")
-                        .withStyle(ChatFormatting.DARK_RED)).withStyle(ChatFormatting.DARK_GRAY));
-            }
+            // 关掉的条目仍然列出（玩家自己关的，需要随时看得见），只是标灰 + 后缀
+            String line = " · " + entry.stack().getHoverName().getString()
+                    + (entry.enabled() ? "" : offSuffix);
+            lines.add(Component.literal(line)
+                    .withStyle(entry.enabled() ? ChatFormatting.GRAY : ChatFormatting.DARK_GRAY));
         }
         if (fused.size() > shown) {
-            lines.add(Component.translatable("tooltip.eternal_heart.fused_more", fused.size() - shown)
+            lines.add(flat(Component.translatable("tooltip.eternal_heart.fused_more", fused.size() - shown))
                     .withStyle(ChatFormatting.DARK_GRAY));
         }
         return lines;
