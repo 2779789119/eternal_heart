@@ -85,8 +85,23 @@ public class AegisSystem implements IFeature {
     private static final String ITEM_OWNER_KEY = "eternal_heart_item_owner";
     private static final String ITEM_UNTIL_KEY = "eternal_heart_item_guard_until";
 
-    /** 死亡备份（同时写入玩家持久化数据，防止"死亡后服务器崩溃"导致物品永久丢失）。 */
-    private static final String DEATH_BACKUP_KEY = "eternal_heart_death_backup";
+    /**
+     * 死亡备份（同时写入玩家持久化数据，防止"死亡后服务器崩溃"导致物品永久丢失）。
+     *
+     * <p>键名由玩家 UUID 派生，不再使用固定字面量：外部模组无法靠一个固定名字
+     * 把「死亡保留物品」的备份删掉（历史实现里固定键就是被这样绕过的）。</p>
+     */
+    private static final String DEATH_BACKUP_PREFIX = "eh_db_";
+    /** 旧版本使用的固定键：只用于升级时把遗留备份读出来。 */
+    private static final String DEATH_BACKUP_LEGACY_KEY = "eternal_heart_death_backup";
+
+    /** 该玩家的备份键（UUID 派生：同一存档内不同玩家不冲突，外部无法预测）。 */
+    private static String backupKey(Player player) {
+        UUID id = player.getUUID();
+        return DEATH_BACKUP_PREFIX
+                + Long.toHexString(id.getMostSignificantBits() ^ id.getLeastSignificantBits() ^ 0x5EED_BEEFL);
+    }
+
     private static final String BACKUP_INVENTORY = "inventory";
     private static final String BACKUP_LEVEL = "level";
     private static final String BACKUP_PROGRESS = "progress";
@@ -543,8 +558,17 @@ public class AegisSystem implements IFeature {
             return false;
         }
 
-        HealthWatch watch = HEALTH_WATCH.get(player.getUUID());
-        if (watch == null || !watch.initialized) return false;
+        HealthWatch watch = HEALTH_WATCH.compute(player.getUUID(), HealthWatch::new);
+        if (!watch.initialized) {
+            // 基线缺失（清理后重新登录，或外部模组把状态表清空）时不要无条件放行：
+            // 就地以当前血量为基线，但「把活人写成 0 / NaN」依旧拒绝 ——
+            // 状态刚被清空不等于授权这一次降血。
+            watch.expected = player.getHealth();
+            watch.initialized = true;
+            watch.damageAllowance = 0f;
+            if (!Float.isFinite(next)) return true;
+            return player.isAlive() && next <= 0f;
+        }
 
         if (!Float.isFinite(next)) return true;            // NaN / Infinity：脏值一律拒绝
         float current = player.getHealth();
@@ -838,9 +862,13 @@ public class AegisSystem implements IFeature {
      */
     public static boolean lastStand(Player player, LivingDeathEvent event) {
         boolean guardedAtDeath = Boolean.TRUE.equals(GUARDED_AT_DEATH.remove(player.getUUID()));
+        // 「血量仍大于 0 却触发死亡」只可能来自绕过伤害管线的强制击杀：
+        // 典型形态是先 setHealth(0)（被硬锁拒绝）再直接 die()。这类路径既有伤害事件
+        // 之外的写法，也不能指望 GUARDED_AT_DEATH 被登记，必须在这里兜底。
+        boolean bypassedHurtPipeline = player.getHealth() > 0f;
         // 摘下饰品后的守护窗口同样适用：上限刚被撤掉、血量被其它模组结算成 0 的路径，
         // 此刻佩戴判定已经是 false，靠 GUARDED_AT_DEATH 等不到登记
-        if (!guardedAtDeath && !withinUnequipGuard(player)) return false;
+        if (!guardedAtDeath && !withinUnequipGuard(player) && !bypassedHurtPipeline) return false;
         if (!ConfigValues.get(EternalHeartConfig.DEATH_GUARD)) return false;
 
         DamageSource source = event.getSource();
@@ -850,6 +878,40 @@ public class AegisSystem implements IFeature {
         if (source.is(DamageTypeTags.BYPASSES_INVULNERABILITY)
                 && !ConfigValues.get(EternalHeartConfig.KILL_GUARD)) return false;
 
+        if (!recoverFromLethal(player, source)) return false;
+        event.setCanceled(true);
+        return true;
+    }
+
+    /**
+     * 死亡判定的最终硬拦截（由 {@code LivingEntityMixin} 注入 {@code die} 的 HEAD 调用）。
+     *
+     * <p>正常死亡一定经过伤害管线：血量先被扣到 0，{@code die()} 才被调用。反过来，
+     * 「血量仍大于 0 却要 {@code die()}」只可能来自绕过伤害管线的强制击杀
+     * （写血被硬锁拒绝后仍然调用 {@code die()}、直接 {@code kill()} 等）。
+     * 这里在死亡流程真正开始之前拦下，比收尾阶段的 {@link #lastStand} 更早 ——
+     * 此时死亡事件还没 post，背包不会被清空，也不存在任何中间态。</p>
+     *
+     * @return true = 已恢复生命值，调用方应取消这次 {@code die()}
+     */
+    public static boolean blockInstantDeath(Player player, DamageSource source) {
+        if (player.level().isClientSide()) return false;
+        if (!ConfigValues.get(EternalHeartConfig.DEATH_GUARD)) return false;
+        // 虚空：交给「虚空拦截」专管，在这里拦会让人卡在虚空里反复触发
+        if (source.is(DamageTypes.FELL_OUT_OF_WORLD)) return false;
+        // 血量已经归零 = 正常伤害致死，交给致死保护 / 死亡兜底按原逻辑处理
+        if (!(player.getHealth() > 0f)) return false;
+        if (!EquipTracker.isEquipped(player) && !withinUnequipGuard(player)) return false;
+        return recoverFromLethal(player, source);
+    }
+
+    /**
+     * 致死保护 / 死亡兜底 / 死亡硬拦截的公共收尾：按保留比例回血、进入共享冷却、
+     * 给出一段濒死无敌窗口。
+     *
+     * @return true = 已恢复（调用方应取消死亡）
+     */
+    private static boolean recoverFromLethal(Player player, DamageSource source) {
         long now = player.level().getGameTime();
         LethalState state = LETHAL_STATE.compute(player.getUUID(), LethalState::new);
         if (now < state.readyAt) return false;
@@ -869,7 +931,6 @@ public class AegisSystem implements IFeature {
                 ? "message.eternal_heart.kill_guard" : "message.eternal_heart.death_guard"), true);
         player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
                 SoundEvents.TOTEM_USE, SoundSource.PLAYERS, 1.0F, 1.0F);
-        event.setCanceled(true);
         return true;
     }
 
@@ -1005,13 +1066,20 @@ public class AegisSystem implements IFeature {
         backup.putInt(BACKUP_LEVEL, cache.level());
         backup.putFloat(BACKUP_PROGRESS, cache.progress());
         backup.putInt(BACKUP_TOTAL, cache.total());
-        player.getPersistentData().put(DEATH_BACKUP_KEY, backup);
+        player.getPersistentData().put(backupKey(player), backup);
+        // 迁移后不再保留旧键，避免两份备份并存
+        player.getPersistentData().remove(DEATH_BACKUP_LEGACY_KEY);
     }
 
     private static DeathCache readBackup(Player player) {
         CompoundTag data = player.getPersistentData();
-        if (!data.contains(DEATH_BACKUP_KEY, Tag.TAG_COMPOUND)) return null;
-        CompoundTag backup = data.getCompound(DEATH_BACKUP_KEY);
+        String key = backupKey(player);
+        if (!data.contains(key, Tag.TAG_COMPOUND)) {
+            // 升级兼容：旧版本固定键里可能还留着未归还的备份
+            if (!data.contains(DEATH_BACKUP_LEGACY_KEY, Tag.TAG_COMPOUND)) return null;
+            key = DEATH_BACKUP_LEGACY_KEY;
+        }
+        CompoundTag backup = data.getCompound(key);
 
         ListTag inventory = backup.contains(BACKUP_INVENTORY, Tag.TAG_LIST)
                 ? backup.getList(BACKUP_INVENTORY, Tag.TAG_COMPOUND) : null;
@@ -1020,22 +1088,40 @@ public class AegisSystem implements IFeature {
     }
 
     private static void clearBackup(Player player) {
-        player.getPersistentData().remove(DEATH_BACKUP_KEY);
+        player.getPersistentData().remove(backupKey(player));
+        player.getPersistentData().remove(DEATH_BACKUP_LEGACY_KEY);
     }
 
-    /** 玩家退出时清理防护状态。 */
+    /**
+     * 清理防护状态（对外入口）。
+     *
+     * <p>只清「可随时重建」的软状态；血量硬锁、致死保护、死亡兜底依赖的状态
+     * <b>必须留到玩家真正离线</b>：这些状态一旦被清空，{@code blockHealthChange}
+     * 会因为读不到基线而放行任意降血，{@code lastStand} 也会因为等不到
+     * {@code GUARDED_AT_DEATH} / 卸下守护窗口而直接放弃。</p>
+     *
+     * <p>历史实现是全部清空，外部模组只要反射调用一次本方法（或调用
+     * {@code FeatureManager.dispatchUnequip} 再调用本方法），整套死亡保护就被拆掉了。</p>
+     */
     public static void forget(Player player) {
-        HEALTH_WATCH.remove(player.getUUID());
-        HEALTH_BASELINE.remove(player.getUUID());
-        LETHAL_STATE.remove(player.getUUID());
-        DEATH_CACHES.remove(player.getUUID());
-        DYING.remove(player.getUUID());
-        GUARDED_AT_DEATH.remove(player.getUUID());
-        HEALTH_RATIO.remove(player.getUUID());
-        PENDING_UNEQUIP.remove(player.getUUID());
-        UNEQUIP_GUARD_LEFT.remove(player.getUUID());
-        LETHAL_IMMUNE_LEFT.remove(player.getUUID());
-        SAFE_SPOT.remove(player.getUUID());
+        UUID id = player.getUUID();
+        SAFE_SPOT.remove(id);
+        HEALTH_RATIO.remove(id);
+        PENDING_UNEQUIP.remove(id);
+    }
+
+    /** 玩家真正退出时清理全部防护状态（内存回收；持久化数据不受影响）。 */
+    public static void forgetAll(Player player) {
+        forget(player);
+        UUID id = player.getUUID();
+        HEALTH_WATCH.remove(id);
+        HEALTH_BASELINE.remove(id);
+        LETHAL_STATE.remove(id);
+        DEATH_CACHES.remove(id);
+        DYING.remove(id);
+        GUARDED_AT_DEATH.remove(id);
+        UNEQUIP_GUARD_LEFT.remove(id);
+        LETHAL_IMMUNE_LEFT.remove(id);
     }
 
     // ============================================================

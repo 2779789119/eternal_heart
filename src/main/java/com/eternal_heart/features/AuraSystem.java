@@ -16,6 +16,7 @@ import net.minecraft.world.level.block.BonemealableBlock;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.FarmBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.event.entity.living.LivingEvent.LivingTickEvent;
 
@@ -176,6 +177,10 @@ public class AuraSystem implements IFeature {
             float chance = ConfigValues.get(EternalHeartConfig.GROWTH_AURA_CHANCE).floatValue();
             int limit = ConfigValues.get(EternalHeartConfig.GROWTH_AURA_MAX_BLOCKS);
             int grown = 0;
+            // 打乱候选顺序：betweenClosed 固定按 x → y → z 递增遍历，配合下面「grown >= limit 就 break」
+            // 会让名额永远被坐标较小的那一侧吃掉 —— 表现出来就是只有玩家某一侧的作物会生长
+            // （东/南侧、以及脚下方块之外的高度基本轮不到）。
+            shuffle(candidates, level.random);
             for (BlockPos pos : candidates) {
                 if (grown >= limit) break;
                 if (level.random.nextFloat() >= chance) continue;
@@ -191,6 +196,20 @@ public class AuraSystem implements IFeature {
         }
 
         if (mature != null) replant(level, mature);
+    }
+
+    /**
+     * Fisher–Yates 洗牌：让「每周期最多催熟 N 个」的名额在光环范围内均匀分布，
+     * 而不是被固定遍历顺序锁定在某一侧。
+     */
+    private static void shuffle(List<BlockPos> list, RandomSource random) {
+        for (int i = list.size() - 1; i > 0; i--) {
+            int j = random.nextInt(i + 1);
+            if (i == j) continue;
+            BlockPos tmp = list.get(i);
+            list.set(i, list.get(j));
+            list.set(j, tmp);
+        }
     }
 
     /** 自动补种：收获成熟作物后立即种回幼苗（仅限种在耕地上的作物）。 */

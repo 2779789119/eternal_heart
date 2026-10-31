@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 功能管理器 —— 统一注册与调度所有功能模块。
@@ -211,6 +212,17 @@ public final class FeatureManager {
         return modifiers;
     }
 
+    /** 生命周期分发令牌：只有本模组内部（{@code EquipTracker} / 登出）持有。 */
+    private static final ThreadLocal<Boolean> LIFECYCLE_GRANT = ThreadLocal.withInitial(() -> Boolean.FALSE);
+    private static final AtomicBoolean EXTERNAL_LIFECYCLE_WARNED = new AtomicBoolean();
+
+    /**
+     * 装备生命周期分发（对外入口）。
+     *
+     * <p>必须有内部令牌才会真正执行：外部模组（含通过反射）直接调用本方法，
+     * 等于一键触发所有模块的 {@code onUnequip}（释放护盾 / 被动 / 属性，
+     * 并让血量硬锁与死亡兜底失去状态），历史上这条路径被用来拆除整套防护。</p>
+     */
     public static void dispatchEquip(Player player) {
         dispatchLifecycle(player, true);
     }
@@ -219,7 +231,33 @@ public final class FeatureManager {
         dispatchLifecycle(player, false);
     }
 
+    /** 内部入口：佩戴边沿（仅 {@code EquipTracker}）。 */
+    public static void dispatchEquipTrusted(Player player) {
+        withLifecycleGrant(() -> dispatchLifecycle(player, true));
+    }
+
+    /** 内部入口：卸下边沿 / 登出清理（仅 {@code EquipTracker} 与登出事件）。 */
+    public static void dispatchUnequipTrusted(Player player) {
+        withLifecycleGrant(() -> dispatchLifecycle(player, false));
+    }
+
+    private static void withLifecycleGrant(Runnable action) {
+        LIFECYCLE_GRANT.set(Boolean.TRUE);
+        try {
+            action.run();
+        } finally {
+            LIFECYCLE_GRANT.set(Boolean.FALSE);
+        }
+    }
+
     private static void dispatchLifecycle(Player player, boolean equip) {
+        if (!Boolean.TRUE.equals(LIFECYCLE_GRANT.get())) {
+            if (EXTERNAL_LIFECYCLE_WARNED.compareAndSet(false, true)) {
+                LOGGER.warn("[永恒之心] 收到非本模组触发的装备生命周期分发，已忽略"
+                        + "（外部模组不应直接调用 dispatchEquip / dispatchUnequip）");
+            }
+            return;
+        }
         for (IFeature feature : FEATURES) {
             if (!feature.isEnabled()) continue;
             try {

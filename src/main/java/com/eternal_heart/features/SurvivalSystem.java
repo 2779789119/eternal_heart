@@ -30,6 +30,7 @@ import net.minecraftforge.event.entity.living.LivingEvent.LivingTickEvent;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 生存系统 —— 生命回复、被动效果、虚空救援、自动喝药、无限箭矢、自动灭火、死亡保护。
@@ -48,7 +49,32 @@ import java.util.Set;
  */
 public class SurvivalSystem implements IFeature {
 
-    private static final String UNDYING_COOLDOWN_KEY = "eternal_heart_undying_cd";
+    /**
+     * 不死图腾冷却键（UUID 派生）。
+     *
+     * <p>固定键会被外部模组直接 {@code remove} 掉，从而把 300 秒冷却清零 ——
+     * 派生键至少要读到玩家的 UUID 才能算出名字。</p>
+     */
+    private static final String UNDYING_COOLDOWN_PREFIX = "eh_uc_";
+    private static final String UNDYING_COOLDOWN_LEGACY_KEY = "eternal_heart_undying_cd";
+
+    private static String undyingKey(Player player) {
+        UUID id = player.getUUID();
+        return UNDYING_COOLDOWN_PREFIX
+                + Long.toHexString(id.getMostSignificantBits() ^ id.getLeastSignificantBits() ^ 0x0D0D0DL);
+    }
+
+    /** 读取冷却就绪时间（兼容旧版本固定键）。 */
+    private static long undyingReadyAt(Player player) {
+        CompoundTag data = player.getPersistentData();
+        String key = undyingKey(player);
+        return data.contains(key) ? data.getLong(key) : data.getLong(UNDYING_COOLDOWN_LEGACY_KEY);
+    }
+
+    private static void setUndyingReadyAt(Player player, long readyAt) {
+        player.getPersistentData().putLong(undyingKey(player), readyAt);
+        player.getPersistentData().remove(UNDYING_COOLDOWN_LEGACY_KEY);
+    }
 
     /** 自动喝药的优先效果：治疗、再生、生命提升、抗性提升。 */
     private static final Set<MobEffect> PRIORITY_EFFECTS = Set.of(
@@ -334,7 +360,7 @@ public class SurvivalSystem implements IFeature {
 
         // 1) 不死图腾：冷却就绪时以半血复活并附带一系列保护效果
         if (ConfigValues.get(EternalHeartConfig.UNDYING_TOTEM)) {
-            long readyAt = player.getPersistentData().getLong(UNDYING_COOLDOWN_KEY);
+            long readyAt = undyingReadyAt(player);
             if (now >= readyAt) {
                 event.setCanceled(true);
                 player.setHealth(player.getMaxHealth() * 0.5f);
@@ -343,7 +369,7 @@ public class SurvivalSystem implements IFeature {
                 player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 200, 2));
                 player.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 200, 0));
                 player.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 200, 4));
-                player.getPersistentData().putLong(UNDYING_COOLDOWN_KEY,
+                setUndyingReadyAt(player,
                         now + ConfigValues.get(EternalHeartConfig.UNDYING_COOLDOWN) * 20L);
                 return;
             }

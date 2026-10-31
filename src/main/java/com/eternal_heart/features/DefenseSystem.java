@@ -47,6 +47,16 @@ public class DefenseSystem implements IFeature {
     private static final List<ResourceKey<DamageType>> FIRE_DAMAGE = List.of(
             DamageTypes.ON_FIRE, DamageTypes.IN_FIRE, DamageTypes.LAVA, DamageTypes.HOT_FLOOR);
 
+    /**
+     * 环境伤害（没有生物攻击者）：由「环境伤害免疫」统一拦截。
+     *
+     * <p>用显式枚举而不是 {@code source.getEntity() == null} 判定：后者会把
+     * 「发射器射出的箭」也算成环境伤害，而且漏掉 {@code directEntity} 是闪电实体的雷击。</p>
+     */
+    private static final List<ResourceKey<DamageType>> ENVIRONMENT_DAMAGE = List.of(
+            DamageTypes.SWEET_BERRY_BUSH, DamageTypes.STALAGMITE, DamageTypes.FREEZE,
+            DamageTypes.CRAMMING, DamageTypes.LIGHTNING_BOLT, DamageTypes.FLY_INTO_WALL);
+
     @Override
     public String getName() {
         return "DefenseSystem";
@@ -91,7 +101,13 @@ public class DefenseSystem implements IFeature {
         OwnedShield.release(player);
     }
 
-    /** 满血时按配置速率充能吸收护盾（只记账我们贡献的部分）。 */
+    /**
+     * 按配置速率持续充能吸收护盾（只记账我们贡献的部分）。
+     *
+     * <p>不再要求「当前满血」：只要吸收值没到上限就一直在充，战斗中也能回盾。
+     * 封顶由 {@link OwnedShield#charge} 内部按 {@code cap} 完成，账目仅在数值真正
+     * 变化时才落盘，所以战斗中的持续充能不会产生每 tick 的 NBT 写入。</p>
+     */
     private void applyShield(Player player) {
         OwnedShield.reconcile(player);
 
@@ -101,7 +117,6 @@ public class DefenseSystem implements IFeature {
             OwnedShield.release(player);
             return;
         }
-        if (player.getHealth() < player.getMaxHealth()) return;
         OwnedShield.charge(player, perSecond / 20f, cap);
     }
 
@@ -153,6 +168,13 @@ public class DefenseSystem implements IFeature {
 
         // 4) 减伤管线
         float reduced = mitigate(player, source, incoming);
+        if (reduced <= 0f) {
+            // 伤害被减到 0：直接取消，而不是 setAmount(0)。
+            // 否则原版仍会消耗无敌帧、播放受伤动画、标记 hurtMarked 触发击退，
+            // 其它模组的 LivingHurtEvent 监听也会收到「0 点伤害」并照常挂效果。
+            event.setCanceled(true);
+            return;
+        }
         event.setAmount(reduced);
 
         // 5) 受伤反馈与反击
@@ -162,12 +184,17 @@ public class DefenseSystem implements IFeature {
         suppressKnockback(player);
     }
 
-    /** 全额免疫判定（窒息 / 仙人掌 / 火焰 / 溺水）。 */
+    /** 全额免疫判定（窒息 / 仙人掌 / 火焰 / 环境 / 溺水）。 */
     private static boolean immuneTo(DamageSource source) {
         if (ConfigValues.get(EternalHeartConfig.SUFFOCATE_IMMUNE) && source.is(DamageTypes.IN_WALL)) return true;
         if (ConfigValues.get(EternalHeartConfig.CACTUS_IMMUNE) && source.is(DamageTypes.CACTUS)) return true;
         if (ConfigValues.get(EternalHeartConfig.FIRE_IMMUNE)) {
             for (ResourceKey<DamageType> type : FIRE_DAMAGE) {
+                if (source.is(type)) return true;
+            }
+        }
+        if (ConfigValues.get(EternalHeartConfig.ENVIRONMENT_IMMUNE)) {
+            for (ResourceKey<DamageType> type : ENVIRONMENT_DAMAGE) {
                 if (source.is(type)) return true;
             }
         }
@@ -231,10 +258,13 @@ public class DefenseSystem implements IFeature {
                 ConfigValues.get(EternalHeartConfig.SPEED_BURST_LEVEL), false, false, true));
     }
 
-    /** 反伤（近战反弹 + 受伤反弹叠加）与闪电反射。 */
+    /** 反伤（闪电反射 + 近战反弹 + 受伤反弹叠加）。 */
     private static void retaliate(Player player, DamageSource source, float dealt) {
         LivingEntity attacker = attackerOf(source, player);
         if (attacker == null) return;
+
+        // 落雷先结算：它是一次独立伤害来源，打完之后再走近战反伤
+        lightningReflect(player, attacker);
 
         float ratio = ConfigValues.get(EternalHeartConfig.REFLECT_RATIO).floatValue()
                 + ConfigValues.get(EternalHeartConfig.COUNTER_DAMAGE_RATIO).floatValue();
@@ -244,16 +274,30 @@ public class DefenseSystem implements IFeature {
             }
             attacker.hurt(player.damageSources().magic(), dealt * ratio);
         }
+    }
 
-        if (ConfigValues.get(EternalHeartConfig.LIGHTNING_REFLECT)
-                && player.getRandom().nextFloat() < ConfigValues.get(EternalHeartConfig.LIGHTNING_REFLECT_CHANCE)
-                && player.level() instanceof ServerLevel level) {
-            LightningBolt bolt = EntityType.LIGHTNING_BOLT.create(level);
-            if (bolt != null) {
-                bolt.moveTo(attacker.getX(), attacker.getY(), attacker.getZ());
-                level.addFreshEntity(bolt);
-            }
-        }
+    /**
+     * 落雷反射 —— 纯视觉闪电 + 一笔手工伤害。
+     *
+     * <p>不再生成原版真实闪电：它会点燃方块、烧地形，并对范围内所有实体造成伤害
+     * （包括玩家自己的宠物），而 {@code SurvivalSystem} 的自动灭火只管玩家自身。
+     * {@code setVisualOnly(true)} 让闪电只播动画与音效，伤害由这里精确结算给攻击者。</p>
+     */
+    private static void lightningReflect(Player player, LivingEntity attacker) {
+        if (!ConfigValues.get(EternalHeartConfig.LIGHTNING_REFLECT)) return;
+        if (player.getRandom().nextFloat() >= ConfigValues.get(EternalHeartConfig.LIGHTNING_REFLECT_CHANCE)) return;
+        if (!(player.level() instanceof ServerLevel level)) return;
+
+        LightningBolt bolt = EntityType.LIGHTNING_BOLT.create(level);
+        if (bolt == null) return;
+        bolt.moveTo(attacker.getX(), attacker.getY(), attacker.getZ());
+        bolt.setVisualOnly(true);
+        level.addFreshEntity(bolt);
+
+        float damage = ConfigValues.get(EternalHeartConfig.LIGHTNING_REFLECT_DAMAGE).floatValue();
+        if (damage <= 0) return;
+        attacker.invulnerableTime = 0;   // 独立伤害来源：破一次无敌帧，否则会被近战反伤吃掉
+        attacker.hurt(level.damageSources().lightningBolt(), damage);
     }
 
     private static LivingEntity attackerOf(DamageSource source, Player player) {

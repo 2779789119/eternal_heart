@@ -142,12 +142,12 @@ public class EternalHeartEvents {
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         Player player = event.getEntity();
-        FeatureManager.dispatchUnequip(player);
-        EquipTracker.forget(player.getUUID());
+        FeatureManager.dispatchUnequipTrusted(player);
+        EquipTracker.forgetAll(player.getUUID());
         FurySystem.forget(player);
         OwnedEffects.forget(player);
         OwnedShield.forget(player);
-        AegisSystem.forget(player);
+        AegisSystem.forgetAll(player);
         CurioGuard.forget(player);
         // 玩家离线后其佩戴的饰品不再计入自动检测名单，尽快重扫
         RevelationFixCompat.scheduleScan();

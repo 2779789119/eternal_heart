@@ -1,8 +1,9 @@
 package com.eternal_heart.client;
 
 import com.eternal_heart.client.ui.UiButton;
-import com.eternal_heart.client.ui.UiEditBox;
+import com.eternal_heart.client.ui.UiList;
 import com.eternal_heart.client.ui.UiScreen;
+import com.eternal_heart.client.ui.UiTextField;
 import com.eternal_heart.client.ui.UiTheme;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -11,7 +12,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -20,26 +20,24 @@ import java.util.Locale;
 import java.util.function.Consumer;
 
 /**
- * 物品选择器 —— 图形化配方编辑器的"选物品"弹层。
+ * 物品选择器 —— 图形化配方编辑器的「选物品」弹层。
  *
  * <p>列出全部已注册物品（含其它模组），显示图标与本地化名称，支持按名称或 ID 搜索。</p>
  */
 public class ItemPickerScreen extends UiScreen {
 
-    private static final int ROW_H = 24;
-    private static final int ROW_STEP = 26;
-    private static final int HEADER_H = 52;
-    private static final int FOOTER_H = 38;
+    private static final int HEADER = 52;
+    private static final int FOOTER = 38;
+    private static final int ROW_H = 26;
 
     private final Screen parent;
     private final Consumer<Item> onPick;
     private final List<Item> all = new ArrayList<>();
     private final List<Item> visible = new ArrayList<>();
 
-    private UiEditBox searchBox;
+    private UiTextField searchBox;
+    private UiList<Item> list;
     private String lastSearch = "";
-    private int scroll, scrollMax;
-    private int listX1, listX2, listTop, listBot;
 
     public ItemPickerScreen(Screen parent, Consumer<Item> onPick) {
         super(Component.translatable("config.eternal_heart.item_picker.title"));
@@ -54,25 +52,38 @@ public class ItemPickerScreen extends UiScreen {
 
     @Override
     protected void init() {
-        layoutPanel(620, 500, 320, 260);
-        listX1 = panelX + 16;
-        listX2 = panelX + panelW - 16;
-        listTop = panelY + HEADER_H + 38;
-        listBot = panelY + panelH - FOOTER_H - 8;
+        clearWidgets();
+        headerH = HEADER;
+        footerH = FOOTER;
+        layoutPanel(620, 500, 340, 280);
 
-        searchBox = new UiEditBox(this.font, listX1, panelY + HEADER_H + 10, listX2 - listX1, 20,
-                Component.translatable("config.eternal_heart.item_picker.search"));
-        searchBox.setMaxLength(48);
-        searchBox.setValue(lastSearch);
-        searchBox.setResponder(text -> {
-            lastSearch = text;
-            rebuild();
-        });
-        this.addRenderableWidget(searchBox);
-        this.setFocused(searchBox);
+        int x1 = contentLeft();
+        int x2 = contentRight();
 
-        this.addRenderableWidget(UiButton.secondary(
-                panelX + panelW - 16 - 80, panelY + panelH - FOOTER_H + 8, 80, 22,
+        searchBox = add(new UiTextField(x1, panelY + HEADER + 8, x2 - x1, 20)
+                .setHint(Component.translatable("config.eternal_heart.item_picker.search"))
+                .setMaxLength(48)
+                .setText(lastSearch)
+                .setResponder(text -> {
+                    lastSearch = text;
+                    rebuild();
+                }));
+        focusWidget(searchBox);
+
+        int listTop = searchBox.getY() + 28;
+        int listBot = footerTop() - 8;
+        list = add(new UiList<Item>(x1, listTop, x2 - x1, listBot - listTop))
+                .setRowMetrics(ROW_H, 2)
+                .setEmptyText(Component.translatable("config.eternal_heart.item_picker.empty").getString())
+                .setPainter(this::paintRow)
+                .setOnClick((index, mx, my, button) -> {
+                    Item item = list.get(index);
+                    if (item == null) return;
+                    onPick.accept(item);
+                    onClose();
+                });
+
+        add(UiButton.secondary(panelX + panelW - 16 - 80, footerTop() + 8, 80, 22,
                 Component.translatable("config.eternal_heart.item_picker.cancel"), this::onClose));
 
         rebuild();
@@ -84,8 +95,8 @@ public class ItemPickerScreen extends UiScreen {
         for (Item item : all) {
             if (query.isEmpty() || matches(item, query)) visible.add(item);
         }
-        scroll = 0;
-        scrollMax = Math.max(0, visible.size() * ROW_STEP - 6 - (listBot - listTop));
+        list.setItems(visible);
+        list.scrollToTop();
     }
 
     private boolean matches(Item item, String query) {
@@ -94,89 +105,35 @@ public class ItemPickerScreen extends UiScreen {
         return new ItemStack(item).getHoverName().getString().toLowerCase(Locale.ROOT).contains(query);
     }
 
+    private void paintRow(GuiGraphics g, Item item, int index, int rowX, int rowY, int rowW, int rowH,
+                          float hover, boolean selected) {
+        UiTheme.cardFade(g, rowX, rowY, rowW, rowH, UiTheme.R_SM, hover, selected);
+        ItemStack stack = new ItemStack(item);
+        g.renderItem(stack, rowX + 8, rowY + (rowH - 16) / 2);
+        g.drawString(this.font, trim(stack.getHoverName().getString(), rowW - 46),
+                rowX + 30, rowY + (rowH - 8) / 2,
+                hover > 0.35f ? UiTheme.TEXT : UiTheme.TEXT_DIM, false);
+    }
+
     @Override
-    public void render(GuiGraphics g, int mx, int my, float pt) {
-        renderBackground(g);
-        drawPanel(g);
-        drawHeader(g, this.title, null, HEADER_H);
-
-        g.enableScissor(listX1, listTop, listX2, listBot);
-        int hovered = rowAt(mx, my);
-        int first = Math.max(0, scroll / ROW_STEP);
-        int last = Math.min(visible.size(), first + (listBot - listTop) / ROW_STEP + 2);
-
-        for (int index = first; index < last; index++) {
-            Item item = visible.get(index);
-            int rowY = listTop + index * ROW_STEP - scroll;
-            if (rowY + ROW_H <= listTop || rowY >= listBot) continue;
-            UiTheme.card(g, listX1, rowY, listX2 - listX1, ROW_H, 5, index == hovered, false);
-            // 物品图标 + 名称
-            ItemStack stack = new ItemStack(item);
-            g.renderItem(stack, listX1 + 8, rowY + 4);
-            g.drawString(this.font, trim(stack.getHoverName().getString(), listX2 - listX1 - 48),
-                    listX1 + 32, rowY + 8, UiTheme.TEXT);
-        }
-        g.disableScissor();
-        drawScrollbar(g, listTop, listBot, scroll, scrollMax, Math.max(1, visible.size() * ROW_STEP));
-
-        if (visible.isEmpty()) {
-            drawEmpty(g, Component.translatable("config.eternal_heart.item_picker.empty").getString(),
-                    listX1, listTop, listX2, listBot);
-        }
-
-        drawFooterDivider(g, FOOTER_H);
-        g.drawString(this.font,
-                Component.translatable("config.eternal_heart.item_picker.count", visible.size()),
-                panelX + 16, panelY + panelH - FOOTER_H + 15, UiTheme.TEXT_MUTED);
-
-        super.render(g, mx, my, pt);
+    protected void renderContent(GuiGraphics g, int mouseX, int mouseY, float partial) {
+        drawHeader(g, this.title, null, HEADER);
+        renderWidgets(g, mouseX, mouseY, partial);
+        drawFooterDivider(g, FOOTER);
+        drawStatus(g, Component.translatable("config.eternal_heart.item_picker.count", visible.size()).getString(),
+                UiTheme.TEXT_MUTED, panelW - 200);
 
         // 悬停时显示完整 ID，方便确认是哪一个模组的物品
-        if (hovered >= 0 && hovered < visible.size()) {
-            ResourceLocation id = BuiltInRegistries.ITEM.getKey(visible.get(hovered));
-            g.renderTooltip(this.font, Component.literal(id.toString()), mx, my);
+        int hovered = list == null ? -1 : list.indexAt(mouseX, mouseY);
+        if (hovered >= 0) {
+            Item item = list.get(hovered);
+            ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
+            tooltip(Component.literal(id.toString()).withStyle(style -> style.withColor(UiTheme.ACCENT)));
         }
-    }
-
-    private int rowAt(double mx, double my) {
-        if (mx < listX1 || mx > listX2 || my < listTop || my > listBot) return -1;
-        int index = (int) ((my - listTop + scroll) / ROW_STEP);
-        return index >= 0 && index < visible.size() ? index : -1;
-    }
-
-    @Override
-    public boolean mouseClicked(double mx, double my, int button) {
-        int index = rowAt(mx, my);
-        if (index >= 0) {
-            onPick.accept(visible.get(index));
-            onClose();
-            return true;
-        }
-        return super.mouseClicked(mx, my, button);
-    }
-
-    @Override
-    public boolean mouseScrolled(double mx, double my, double delta) {
-        scroll = (int) Math.max(0, Math.min(scrollMax, scroll - delta * ROW_STEP));
-        return true;
-    }
-
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            onClose();
-            return true;
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
     public void onClose() {
         if (this.minecraft != null) this.minecraft.setScreen(parent);
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
     }
 }

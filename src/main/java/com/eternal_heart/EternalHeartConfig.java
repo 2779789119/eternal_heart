@@ -50,6 +50,8 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> DEBUFF_WHITELIST;
     public static final ForgeConfigSpec.BooleanValue SUFFOCATE_IMMUNE;
     public static final ForgeConfigSpec.BooleanValue CACTUS_IMMUNE;
+    /** 环境伤害免疫：浆果丛 / 石笋 / 细雪冻结 / 挤压 / 雷击 / 鞘翅撞墙。 */
+    public static final ForgeConfigSpec.BooleanValue ENVIRONMENT_IMMUNE;
     public static final ForgeConfigSpec.DoubleValue EXPLOSION_RESIST;
     public static final ForgeConfigSpec.DoubleValue DAMAGE_CAP_RATIO;
     public static final ForgeConfigSpec.DoubleValue PROJECTILE_RESIST;
@@ -179,6 +181,8 @@ public class EternalHeartConfig {
     public static final ForgeConfigSpec.DoubleValue AUTO_POTION_THRESHOLD;
     public static final ForgeConfigSpec.BooleanValue LIGHTNING_REFLECT;
     public static final ForgeConfigSpec.DoubleValue LIGHTNING_REFLECT_CHANCE;
+    /** 反射闪电对攻击者造成的伤害（0 = 纯视觉）。 */
+    public static final ForgeConfigSpec.DoubleValue LIGHTNING_REFLECT_DAMAGE;
     public static final ForgeConfigSpec.BooleanValue KILL_CHAIN;
     public static final ForgeConfigSpec.DoubleValue KILL_CHAIN_RANGE;
 
@@ -412,6 +416,10 @@ public class EternalHeartConfig {
         DEBUFF_WHITELIST = BUILDER.comment("效果保护白名单 - 永远不被清除","格式: [\"modid:effect_id\"]").defineList("debuffWhitelist", () -> List.of(), o -> o instanceof String s && s.contains(":"));
         SUFFOCATE_IMMUNE = BUILDER.comment("是否免疫窒息伤害").define("suffocateImmune", true);
         CACTUS_IMMUNE = BUILDER.comment("是否免疫仙人掌伤害").define("cactusImmune", true);
+        ENVIRONMENT_IMMUNE = BUILDER.comment(
+                        "环境伤害免疫 - 免疫浆果丛 / 石笋 / 细雪冻结 / 挤压 / 雷击 / 鞘翅撞墙这类「没有攻击者」的伤害",
+                        "不含火焰类（由「免疫火焰」单管）与虚空（由「虚空拦截」单管）")
+                .define("environmentImmune", true);
         EXPLOSION_RESIST = BUILDER.comment("额外爆炸伤害减免 (80 = 80%，叠加到基础减伤)").defineInRange("explosionResist", 0.8, -Double.MAX_VALUE, Double.MAX_VALUE);
         DAMAGE_CAP_RATIO = BUILDER.comment("单次受伤上限 (30 = 不超过最大生命30%，0 = 关闭)").defineInRange("damageCapRatio", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
         PROJECTILE_RESIST = BUILDER.comment("弹射物伤害额外减免 (50 = 50%，叠加到基础减伤)").defineInRange("projectileResist", 0.5, -Double.MAX_VALUE, Double.MAX_VALUE);
@@ -574,6 +582,10 @@ public class EternalHeartConfig {
         AUTO_POTION_THRESHOLD = BUILDER.comment("自动喝药触发血量比例 (30 = 30%)").defineInRange("autoPotionThreshold", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
         LIGHTNING_REFLECT = BUILDER.comment("受伤时连锁闪电反击攻击者").define("lightningReflect", true);
         LIGHTNING_REFLECT_CHANCE = BUILDER.comment("闪电反击概率 (30 = 30%)").defineInRange("lightningReflectChance", 0.3, -Double.MAX_VALUE, Double.MAX_VALUE);
+        LIGHTNING_REFLECT_DAMAGE = BUILDER.comment(
+                        "落雷反射伤害 - 反射闪电对攻击者造成的伤害（0 = 只播放闪电动画，不造成伤害）",
+                        "闪电一律为「视觉闪电」：不点燃方块、不伤害周围其它实体，只结算这一笔伤害")
+                .defineInRange("lightningReflectDamage", 5.0, 0.0, Double.MAX_VALUE);
         KILL_CHAIN = BUILDER.comment("击杀连锁 - 击杀怪物时伤害周围同种生物").define("killChain", true);
         KILL_CHAIN_RANGE = BUILDER.comment("击杀连锁范围 (格；上限 512 为引擎安全值)").defineInRange("killChainRange", 8.0, -Double.MAX_VALUE, 512.0);
         BUILDER.pop();

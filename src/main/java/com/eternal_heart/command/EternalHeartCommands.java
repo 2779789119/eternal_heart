@@ -196,7 +196,7 @@ public final class EternalHeartCommands {
     }
 
     private static int forceUnequip(CommandSourceStack source, ServerPlayer player) {
-        if (!CurioGuard.forceUnequip(player)) {
+        if (!CurioGuard.forceUnequipAuthorized(player)) {
             source.sendFailure(Component.translatable(CURIO_PREFIX + "absent"));
             return 0;
         }

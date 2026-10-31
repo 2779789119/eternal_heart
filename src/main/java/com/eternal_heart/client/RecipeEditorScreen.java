@@ -1,6 +1,7 @@
 package com.eternal_heart.client;
 
 import com.eternal_heart.client.ui.UiButton;
+import com.eternal_heart.client.ui.UiList;
 import com.eternal_heart.client.ui.UiScreen;
 import com.eternal_heart.client.ui.UiTheme;
 import com.eternal_heart.features.RecipeText;
@@ -34,24 +35,17 @@ import java.util.function.Consumer;
  * </ul>
  *
  * <p>生成的结果仍是简化语法文本（{@code shaped: …} / {@code shapeless: …} / {@code smelting: …}），
- * 与手写、配置文件完全一致 —— 图形编辑只是把这段文本"点"出来。</p>
- *
- * <p>左键点格子 = 选物品，右键点格子 = 清空；点击右侧已配置列表可载回编辑器修改
- * （含标签 {@code #tag} 的配方无法还原成具体物品，会提示改用文本模式）。</p>
+ * 与手写、配置文件完全一致 —— 图形编辑只是把这段文本「点」出来。</p>
  */
 public class RecipeEditorScreen extends UiScreen {
 
-    // ===================== 布局 =====================
-    private static final int CELL = 30;
-    private static final int GAP = 3;
-    private static final int ROW_H = 22;
-    private static final int ROW_STEP = 26;
-    private static final int HEADER_H = 52;
-    private static final int FOOTER_H = 38;
+    private static final int HEADER = 52;
+    private static final int FOOTER = 38;
+    private static final int CELL = 32;
+    private static final int GAP = 4;
 
     private enum Mode {SHAPED, SHAPELESS, COOKING}
 
-    // ===================== 状态 =====================
     private final Screen parent;
     private final List<String> entries;
     private final Consumer<List<String>> onChange;
@@ -61,12 +55,11 @@ public class RecipeEditorScreen extends UiScreen {
     private ItemStack output = ItemStack.EMPTY;
     private int outputCount = 1;
     private Mode mode = Mode.SHAPED;
-    private int selected = -1;
-    private int scroll, scrollMax;
+    private UiList<String> list;
 
     private int gridX, gridY;
     private int outputX, outputY;
-    private int listX1, listX2, listTop, listBot;
+    private int countY;
 
     public RecipeEditorScreen(Screen parent, List<String> initial, Consumer<List<String>> onChange) {
         super(Component.translatable("config.eternal_heart.recipe_editor.title"));
@@ -82,48 +75,63 @@ public class RecipeEditorScreen extends UiScreen {
 
     @Override
     protected void init() {
-        layoutPanel(540, 410, 420, 320);
+        clearWidgets();
+        headerH = HEADER;
+        footerH = FOOTER;
+        layoutPanel(580, 470, 440, 360);
 
-        int contentTop = panelY + HEADER_H;
-        gridX = panelX + 20;
-        gridY = contentTop + 50;
-        outputX = gridX + 3 * (CELL + GAP) - GAP + 34;
-        outputY = gridY;
-        listX1 = panelX + 20;
-        listX2 = panelX + panelW - 20;
-        listTop = gridY + CELL + 40;
-        listBot = panelY + panelH - FOOTER_H - 8;
+        int cx = contentLeft();
+        int top = contentTop();
 
-        // 模式切换（分段控件）
+        // 模式切换（分段控件，铺满内容宽度）
         Mode[] modes = Mode.values();
-        int modeY = contentTop + 12;
+        int gap = 6;
+        int modeW = (contentRight() - cx - gap * (modes.length - 1)) / modes.length;
         for (int i = 0; i < modes.length; i++) {
             Mode m = modes[i];
-            modeButtons[i] = this.addRenderableWidget(UiButton.segment(
-                    panelX + 20 + i * 84, modeY, 78, 20, modeLabel(m), () -> {
+            modeButtons[i] = add(UiButton.segment(cx + i * (modeW + gap), top + 10, modeW, 22,
+                    modeLabel(m), () -> {
                         mode = m;
                         refreshModeButtons();
                     }));
         }
         refreshModeButtons();
 
-        // 产出数量
-        this.addRenderableWidget(UiButton.secondary(outputX + 36, outputY + 6, 18, 18,
-                Component.literal("-"), () -> outputCount = Math.max(1, outputCount - 1)));
-        this.addRenderableWidget(UiButton.secondary(outputX + 84, outputY + 6, 18, 18,
-                Component.literal("+"), () -> outputCount = Math.min(64, outputCount + 1)));
+        int gridW = 3 * CELL + 2 * GAP;
+        gridX = cx + 4;
+        gridY = top + 66;
+        outputX = gridX + gridW + 46;
+        outputY = gridY + CELL + GAP;
+        countY = outputY + CELL + 8;
+
+        add(UiButton.square(outputX - 2, countY, 20, Component.literal("-"),
+                () -> outputCount = Math.max(1, outputCount - 1)));
+        add(UiButton.square(outputX + CELL + 26, countY, 20, Component.literal("+"),
+                () -> outputCount = Math.min(64, outputCount + 1)));
+
+        int listTop = gridY + 3 * CELL + 2 * GAP + 28;
+        int listBot = footerTop() - 8;
+        list = add(new UiList<String>(cx, listTop, contentRight() - cx, listBot - listTop))
+                .setRowMetrics(22, 4)
+                .setEmptyText(Component.translatable("config.eternal_heart.recipe_editor.no_recipes").getString())
+                .setPainter(this::paintRow)
+                .setOnClick((index, mx, my, button) -> {
+                    String text = list.get(index);
+                    if (text != null) loadFrom(text);
+                });
+        list.setItems(entries);
 
         // 底部操作
-        int buttonY = panelY + panelH - FOOTER_H + 8;
-        this.addRenderableWidget(UiButton.primary(panelX + 20, buttonY, 54, 22,
+        int buttonY = footerTop() + 8;
+        add(UiButton.primary(cx, buttonY, 60, 22,
                 Component.translatable("config.eternal_heart.recipe_editor.add"), () -> commit(false)));
-        this.addRenderableWidget(UiButton.secondary(panelX + 80, buttonY, 72, 22,
+        add(UiButton.secondary(cx + 66, buttonY, 80, 22,
                 Component.translatable("config.eternal_heart.recipe_editor.update"), () -> commit(true)));
-        this.addRenderableWidget(UiButton.danger(panelX + 158, buttonY, 72, 22,
+        add(UiButton.danger(cx + 152, buttonY, 80, 22,
                 Component.translatable("config.eternal_heart.recipe_editor.remove"), this::removeSelected));
-        this.addRenderableWidget(UiButton.ghost(panelX + 236, buttonY, 70, 22,
+        add(UiButton.ghost(cx + 238, buttonY, 76, 22,
                 Component.translatable("config.eternal_heart.recipe_editor.text_mode"), this::openTextMode));
-        this.addRenderableWidget(UiButton.secondary(panelX + panelW - 20 - 60, buttonY, 60, 22,
+        add(UiButton.secondary(contentRight() - 64, buttonY, 64, 22,
                 Component.translatable("config.eternal_heart.recipe_editor.done"), this::onClose));
     }
 
@@ -142,64 +150,62 @@ public class RecipeEditorScreen extends UiScreen {
     //  渲染
     // ============================================================
 
+    private void paintRow(GuiGraphics g, String text, int index, int rowX, int rowY, int rowW, int rowH,
+                          float hover, boolean active) {
+        UiTheme.cardFade(g, rowX, rowY, rowW, rowH, UiTheme.R_SM, hover, active);
+        if (active) UiTheme.roundRect(g, rowX + 3, rowY + 5, 3, rowH - 10, 1, UiTheme.ACCENT);
+        g.drawString(this.font, trim(text, rowW - 26), rowX + 12, rowY + (rowH - 8) / 2,
+                active ? UiTheme.ACCENT : UiTheme.TEXT, false);
+    }
+
     @Override
-    public void render(GuiGraphics g, int mx, int my, float pt) {
-        renderBackground(g);
-        drawPanel(g);
-        drawHeader(g, this.title, null, HEADER_H);
+    protected void renderContent(GuiGraphics g, int mouseX, int mouseY, float partial) {
+        drawHeader(g, this.title, Component.translatable("config.eternal_heart.recipe_editor.current_mode",
+                modeLabel(mode).getString()), HEADER);
+
+        renderWidgets(g, mouseX, mouseY, partial);
 
         // 3×3 网格
-        int hoveredCell = cellAt(mx, my);
+        int hoveredCell = cellAt(mouseX, mouseY);
         for (int index = 0; index < 9; index++) {
             int column = index % 3;
             int row = index / 3;
             int x = gridX + column * (CELL + GAP);
             int y = gridY + row * (CELL + GAP);
             UiTheme.slot(g, x, y, CELL, index == hoveredCell);
-            if (!grid[index].isEmpty()) g.renderItem(grid[index], x + 7, y + 7);
+            if (!grid[index].isEmpty()) g.renderItem(grid[index], x + 8, y + 8);
         }
 
         // 箭头 + 产出槽
-        g.drawString(this.font, "→", gridX + 3 * (CELL + GAP) - GAP + 12, gridY + 11,
-                UiTheme.TEXT_MUTED);
-        UiTheme.slot(g, outputX, outputY, CELL, onOutput(mx, my));
-        if (!output.isEmpty()) g.renderItem(output, outputX + 7, outputY + 7);
-        g.drawString(this.font, Component.translatable("config.eternal_heart.recipe_editor.output"),
-                outputX, outputY - 11, UiTheme.TEXT_DIM);
-        g.drawCenteredString(this.font,
-                Component.literal("x" + outputCount).getString(), outputX + 69, outputY + 11, UiTheme.TEXT);
+        g.drawString(this.font, "→", gridX + 3 * CELL + 2 * GAP + 14, outputY + 12,
+                UiTheme.TEXT_MUTED, false);
+        g.drawString(this.font, Component.translatable("config.eternal_heart.recipe_editor.output").getString(),
+                outputX, outputY - 13, UiTheme.TEXT_DIM, false);
+        UiTheme.slot(g, outputX, outputY, CELL, onOutput(mouseX, mouseY));
+        if (!output.isEmpty()) g.renderItem(output, outputX + 8, outputY + 8);
+        g.drawCenteredString(this.font, "x" + outputCount, outputX + CELL / 2, countY + 6, UiTheme.TEXT);
 
         // 已配置列表
-        g.drawString(this.font,
-                Component.translatable("config.eternal_heart.recipe_editor.saved", entries.size()),
-                listX1, listTop - 14, UiTheme.TEXT_DIM);
-        g.enableScissor(listX1, listTop, listX2, listBot);
-        int hovered = rowAt(mx, my);
-        for (int index = 0; index < entries.size(); index++) {
-            int rowY = listTop + index * ROW_STEP - scroll;
-            if (rowY + ROW_H <= listTop || rowY >= listBot) continue;
-            boolean active = index == selected;
-            UiTheme.card(g, listX1, rowY, listX2 - listX1, ROW_H, 5, index == hovered, active);
-            g.drawString(this.font, trim(entries.get(index), listX2 - listX1 - 24), listX1 + 12,
-                    rowY + 7, active ? UiTheme.ACCENT : UiTheme.TEXT);
-        }
-        g.disableScissor();
-        drawScrollbar(g, listTop, listBot, scroll, scrollMax, Math.max(1, entries.size() * ROW_STEP));
-        if (entries.isEmpty()) {
-            g.drawString(this.font,
-                    Component.translatable("config.eternal_heart.recipe_editor.no_recipes"),
-                    listX1 + 4, listTop + 4, UiTheme.TEXT_MUTED, false);
-        }
+        g.drawString(this.font, Component.translatable("config.eternal_heart.recipe_editor.saved", entries.size())
+                .getString(), contentLeft(), list.getY() - 13, UiTheme.TEXT_DIM, false);
 
-        drawFooterDivider(g, FOOTER_H);
-        super.render(g, mx, my, pt);
+        drawFooterDivider(g, FOOTER);
 
         // 悬停提示
-        int cell = cellAt(mx, my);
+        int cell = cellAt(mouseX, mouseY);
         if (cell >= 0 && !grid[cell].isEmpty()) {
-            g.renderTooltip(this.font, grid[cell].getHoverName(), mx, my);
-        } else if (onOutput(mx, my) && !output.isEmpty()) {
-            g.renderTooltip(this.font, output.getHoverName(), mx, my);
+            tooltip(grid[cell].getHoverName());
+        } else if (onOutput(mouseX, mouseY) && !output.isEmpty()) {
+            tooltip(output.getHoverName());
+        } else {
+            int hoveredRow = list.indexAt(mouseX, mouseY);
+            if (hoveredRow >= 0) {
+                String text = list.get(hoveredRow);
+                if (text != null) {
+                    tooltip(Component.literal(UiTheme.trim(this.font, text, 260))
+                            .withStyle(style -> style.withColor(UiTheme.ACCENT_DIM)));
+                }
+            }
         }
     }
 
@@ -221,7 +227,7 @@ public class RecipeEditorScreen extends UiScreen {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    protected boolean onMouseClicked(double mouseX, double mouseY, int button) {
         int cell = cellAt(mouseX, mouseY);
         if (cell >= 0) {
             if (button == 1) {
@@ -232,16 +238,11 @@ public class RecipeEditorScreen extends UiScreen {
             return true;
         }
         if (onOutput(mouseX, mouseY)) {
-            pickItem(item -> output = new ItemStack(item));
+            if (button == 1) output = ItemStack.EMPTY;
+            else pickItem(item -> output = new ItemStack(item));
             return true;
         }
-        int index = rowAt(mouseX, mouseY);
-        if (index >= 0) {
-            selected = index;
-            loadFrom(entries.get(index));
-            return true;
-        }
-        return super.mouseClicked(mouseX, mouseY, button);
+        return false;
     }
 
     private void pickItem(Consumer<Item> apply) {
@@ -250,19 +251,6 @@ public class RecipeEditorScreen extends UiScreen {
             apply.accept(item);
             this.minecraft.setScreen(this);
         }));
-    }
-
-    private int rowAt(double mouseX, double mouseY) {
-        if (mouseX < listX1 || mouseX > listX2 || mouseY < listTop || mouseY > listBot) return -1;
-        int index = (int) ((mouseY - listTop + scroll) / ROW_STEP);
-        return index >= 0 && index < entries.size() ? index : -1;
-    }
-
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        scrollMax = Math.max(0, entries.size() * ROW_STEP - 6 - (listBot - listTop));
-        scroll = (int) Math.max(0, Math.min(scrollMax, scroll - delta * ROW_STEP));
-        return true;
     }
 
     // ============================================================
@@ -277,15 +265,6 @@ public class RecipeEditorScreen extends UiScreen {
 
         return switch (mode) {
             case SHAPED -> {
-                List<String> rows = new ArrayList<>();
-                for (int row = 0; row < 3; row++) {
-                    List<String> cells = new ArrayList<>();
-                    for (int column = 0; column < 3; column++) {
-                        ItemStack stack = grid[row * 3 + column];
-                        cells.add(stack.isEmpty() ? "_" : shortId(stack));
-                    }
-                    rows.add(String.join(" ", cells));
-                }
                 // 去掉四周空行 / 空列（用户把图案画在中间也能得到正确形状）
                 int minRow = 3, maxRow = -1, minCol = 3, maxCol = -1;
                 for (int index = 0; index < 9; index++) {
@@ -297,7 +276,6 @@ public class RecipeEditorScreen extends UiScreen {
                     maxCol = Math.max(maxCol, column);
                 }
                 if (maxRow < 0) yield null;
-                // 逐行裁剪：用裁剪后的矩形重新生成（minCol 会改变列对齐，需以列切片表达）
                 List<String> trimmed = new ArrayList<>();
                 for (int row = minRow; row <= maxRow; row++) {
                     List<String> cells = new ArrayList<>();
@@ -428,19 +406,26 @@ public class RecipeEditorScreen extends UiScreen {
             message("config.eternal_heart.recipe_editor.incomplete");
             return;
         }
+        int selected = list.getSelectedIndex();
         if (replaceSelected && selected >= 0 && selected < entries.size()) {
             entries.set(selected, text);
         } else {
             entries.add(text);
             selected = entries.size() - 1;
         }
+        list.setItems(entries);
+        list.setSelected(selected);
+        list.ensureVisible(selected);
         clearDraft();
     }
 
     private void removeSelected() {
+        int selected = list.getSelectedIndex();
         if (selected < 0 || selected >= entries.size()) return;
         entries.remove(selected);
         if (selected >= entries.size()) selected = entries.size() - 1;
+        list.setItems(entries);
+        list.setSelected(selected);
         clearDraft();
     }
 
@@ -457,6 +442,7 @@ public class RecipeEditorScreen extends UiScreen {
                 "config.eternal_heart.text_list.hint_recipes", entries, updated -> {
             entries.clear();
             entries.addAll(updated);
+            if (list != null) list.setItems(entries);
         }));
     }
 
@@ -475,10 +461,5 @@ public class RecipeEditorScreen extends UiScreen {
     public void onClose() {
         onChange.accept(List.copyOf(entries));
         if (this.minecraft != null) this.minecraft.setScreen(parent);
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
     }
 }

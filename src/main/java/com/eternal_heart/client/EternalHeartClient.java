@@ -49,11 +49,27 @@ public class EternalHeartClient {
                 EternalHeartMod.ETERNAL_HEART.get(), () -> HaloCurioRenderer.INSTANCE));
     }
 
-    /** 收起状态下那句浮动箴言的客户端渲染器。 */
+    /**
+     * 提示框组件 → 客户端渲染器。
+     *
+     * <p><b>四个都必须注册</b>：原版 {@code ClientTooltipComponent.create} 只认识注册过的类型，
+     * 漏一个就会在悬停物品 / 打开饰品栏时抛 {@code IllegalArgumentException: Unknown TooltipComponent}
+     * 并让渲染线程崩溃（1.44.0 首版就是漏了后三个）。</p>
+     */
     @SubscribeEvent
     public static void registerTooltipFactories(net.minecraftforge.client.event.RegisterClientTooltipComponentFactoriesEvent event) {
+        // 收起状态下那句上下浮动、淡入淡出的箴言
         event.register(com.eternal_heart.client.tooltip.FloatingLineTooltip.class,
                 com.eternal_heart.client.tooltip.ClientFloatingLineTooltip::new);
+        // 展开后逐字炫彩的一行文字
+        event.register(com.eternal_heart.client.tooltip.RainbowLineTooltip.class,
+                com.eternal_heart.client.tooltip.ClientRainbowLineTooltip::new);
+        // 只占宽不占高的占位（锁定提示框宽度）
+        event.register(com.eternal_heart.client.tooltip.MinWidthTooltip.class,
+                com.eternal_heart.client.tooltip.ClientMinWidthTooltip::new);
+        // 头部下方那条与边框同步流动的分隔线
+        event.register(com.eternal_heart.client.tooltip.SeparatorTooltip.class,
+                com.eternal_heart.client.tooltip.ClientSeparatorTooltip::new);
     }
 
     @SubscribeEvent

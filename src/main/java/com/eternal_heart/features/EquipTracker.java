@@ -110,7 +110,7 @@ public final class EquipTracker {
                 state.missingTicks = 0;
                 if (!state.equipped) {
                     state.equipped = true;
-                    FeatureManager.dispatchEquip(player);
+                    FeatureManager.dispatchEquipTrusted(player);
                 }
             }
             case ABSENT -> {
@@ -122,7 +122,7 @@ public final class EquipTracker {
                     state.missingTicks = 0;
                     LOGGER.debug("[永恒之心] {} 判定为已卸下（连续 {} tick 未检测到饰品），执行卸载清理",
                             player.getName().getString(), UNEQUIP_CONFIRM_TICKS);
-                    FeatureManager.dispatchUnequip(player);
+                    FeatureManager.dispatchUnequipTrusted(player);
                 }
             }
             case UNKNOWN -> {
@@ -180,8 +180,20 @@ public final class EquipTracker {
         return state.equipped;
     }
 
-    /** 玩家退出时清理缓存，防止内存泄漏。 */
+    /**
+     * 清理状态（对外入口）：只重置防抖计时，保留「是否佩戴」判定。
+     *
+     * <p>判定本身被清空时，{@link AegisSystem#blockHealthChange} 会认为玩家处于
+     * 「未装备」分支而放行未经伤害管线的降血 —— 等于替外部把防护关掉。
+     * 缓存回收交给 {@link #forgetAll(UUID)}（仅登出时调用）。</p>
+     */
     public static void forget(UUID id) {
+        State state = STATES.get(id);
+        if (state != null) state.missingTicks = 0;
+    }
+
+    /** 玩家真正退出时清空缓存，防止内存泄漏。 */
+    public static void forgetAll(UUID id) {
         STATES.remove(id);
     }
 

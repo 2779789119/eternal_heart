@@ -2,6 +2,7 @@ package com.eternal_heart.features;
 
 import com.eternal_heart.EternalHeartConfig;
 import com.eternal_heart.EternalHeartMod;
+import com.mojang.logging.LogUtils;
 import com.eternal_heart.config.ConfigValues;
 import com.eternal_heart.core.PlayerScoped;
 import com.eternal_heart.core.Ticker;
@@ -23,7 +24,11 @@ import top.theillusivec4.curios.api.type.capability.ICuriosItemHandler;
 import top.theillusivec4.curios.api.type.inventory.ICurioStacksHandler;
 import top.theillusivec4.curios.api.type.inventory.IDynamicStackHandler;
 
+import org.slf4j.Logger;
+
 import java.util.Collection;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 饰品守护（Curio Guard）—— 让永恒之心「死不掉、也锁不住」。
@@ -61,8 +66,27 @@ import java.util.Collection;
  */
 public class CurioGuard implements IFeature {
 
-    /** 持久化备份键（写入玩家 PersistentData，跨服务器重启有效）。 */
-    private static final String BACKUP_KEY = "eternal_heart_curio_backup";
+    private static final Logger LOGGER = LogUtils.getLogger();
+
+    /**
+     * 备份键（写入玩家 PersistentData，跨服务器重启有效）。
+     *
+     * <p>键名由玩家 UUID 派生：外部模组无法靠固定名字删掉「饰品防夺」的备份。</p>
+     */
+    private static final String BACKUP_PREFIX = "eh_cb_";
+    /** 旧版本固定键：仅用于升级时读取遗留备份。 */
+    private static final String BACKUP_LEGACY_KEY = "eternal_heart_curio_backup";
+
+    private static String backupKey(Player player) {
+        UUID id = player.getUUID();
+        return BACKUP_PREFIX
+                + Long.toHexString(id.getMostSignificantBits() ^ id.getLeastSignificantBits() ^ 0x0C0FFEEL);
+    }
+
+    /** 强制卸下令牌：只有本模组命令层持有（外部反射调用会被拒绝）。 */
+    private static final ThreadLocal<Boolean> FORCE_UNEQUIP_GRANT = ThreadLocal.withInitial(() -> Boolean.FALSE);
+    private static final AtomicBoolean EXTERNAL_FORCE_WARNED = new AtomicBoolean();
+
     private static final String BACKUP_STACK = "stack";
     private static final String BACKUP_IDENTIFIER = "identifier";
     private static final String BACKUP_INDEX = "index";
@@ -239,11 +263,36 @@ public class CurioGuard implements IFeature {
     }
 
     /**
-     * 强制取下（命令入口）：直接写槽位，绕过 {@code canUnequip} 与任何模组的锁定。
+     * 强制取下（命令入口的授权包装）：在内部令牌上下文里执行真正的取下。
      *
-     * @return 是否取下成功（未佩戴时返回 false）
+     * <p>调用方必须持有令牌 —— 目前只有 {@code /eternalheart curio unequip} 会走到这里。
+     * 外部模组（含通过反射调用本类）直接调 {@link #forceUnequip} 会被拒绝。</p>
+     */
+    public static boolean forceUnequipAuthorized(ServerPlayer player) {
+        FORCE_UNEQUIP_GRANT.set(Boolean.TRUE);
+        try {
+            return forceUnequip(player);
+        } finally {
+            FORCE_UNEQUIP_GRANT.set(Boolean.FALSE);
+        }
+    }
+
+    /**
+     * 强制取下：直接写槽位，绕过 {@code canUnequip} 与任何模组的锁定。
+     *
+     * <p>这是个「管理命令」能力，不是给外部模组用的通用接口：历史上它被外部
+     * 当作反防御入口（先摘掉饰品，再把玩家写死）。无令牌调用一律返回 false。</p>
+     *
+     * @return 是否取下成功（未佩戴或未授权时返回 false）
      */
     public static boolean forceUnequip(ServerPlayer player) {
+        if (!Boolean.TRUE.equals(FORCE_UNEQUIP_GRANT.get())) {
+            if (EXTERNAL_FORCE_WARNED.compareAndSet(false, true)) {
+                LOGGER.warn("[永恒之心] 拒绝了一次非命令来源的强制卸下请求"
+                        + "（外部模组不应直接调用 CurioGuard.forceUnequip）");
+            }
+            return false;
+        }
         ICuriosItemHandler handler = handlerOf(player);
         if (handler == null) return false;
         SlotResult found = handler.findFirstCurio(EternalHeartMod.ETERNAL_HEART.get()).orElse(null);
@@ -417,13 +466,20 @@ public class CurioGuard implements IFeature {
         tag.put(BACKUP_STACK, backup.stack().save(new CompoundTag()));
         if (backup.identifier() != null) tag.putString(BACKUP_IDENTIFIER, backup.identifier());
         tag.putInt(BACKUP_INDEX, backup.index());
-        player.getPersistentData().put(BACKUP_KEY, tag);
+        player.getPersistentData().put(backupKey(player), tag);
+        // 迁移后不再保留旧键，避免两份备份并存
+        player.getPersistentData().remove(BACKUP_LEGACY_KEY);
     }
 
     private static Backup readBackup(Player player) {
         CompoundTag data = player.getPersistentData();
-        if (!data.contains(BACKUP_KEY, Tag.TAG_COMPOUND)) return null;
-        CompoundTag tag = data.getCompound(BACKUP_KEY);
+        String key = backupKey(player);
+        if (!data.contains(key, Tag.TAG_COMPOUND)) {
+            // 升级兼容：旧版本固定键里可能还留着未归还的备份
+            if (!data.contains(BACKUP_LEGACY_KEY, Tag.TAG_COMPOUND)) return null;
+            key = BACKUP_LEGACY_KEY;
+        }
+        CompoundTag tag = data.getCompound(key);
         if (!tag.contains(BACKUP_STACK, Tag.TAG_COMPOUND)) return null;
         ItemStack stack = ItemStack.of(tag.getCompound(BACKUP_STACK));
         if (stack.isEmpty()) return null;
@@ -432,7 +488,8 @@ public class CurioGuard implements IFeature {
     }
 
     private static void clearBackup(Player player) {
-        player.getPersistentData().remove(BACKUP_KEY);
+        player.getPersistentData().remove(backupKey(player));
+        player.getPersistentData().remove(BACKUP_LEGACY_KEY);
     }
 
     /** 玩家退出时清理内存备份（持久化备份保留，供重生归还兜底）。 */

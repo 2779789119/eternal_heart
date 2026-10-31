@@ -1,8 +1,9 @@
 package com.eternal_heart.client;
 
 import com.eternal_heart.client.ui.UiButton;
-import com.eternal_heart.client.ui.UiEditBox;
+import com.eternal_heart.client.ui.UiList;
 import com.eternal_heart.client.ui.UiScreen;
+import com.eternal_heart.client.ui.UiTextField;
 import com.eternal_heart.client.ui.UiTheme;
 import com.eternal_heart.core.Numbers;
 import com.eternal_heart.features.CustomAttributes;
@@ -13,7 +14,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraftforge.registries.ForgeRegistries;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -26,16 +26,14 @@ import java.util.function.Consumer;
 /**
  * 自定义属性选择器 —— 让「永恒之心」能加成任意已注册属性（含其它模组）。
  *
- * <p>列出 {@link ForgeRegistries#ATTRIBUTES} 中的全部属性（原版 + Forge + 其它模组），
- * 点击属性行进入 {@link AttributeValueScreen} 设置数值与操作类型；已配置的行显示当前设置。
- * 与内置属性重复的属性同样可选——两者会各自生效（UUID 不同，互不覆盖）。</p>
+ * <p>列出 {@link ForgeRegistries#ATTRIBUTES} 中的全部属性，点击属性行进入
+ * {@link AttributeValueScreen} 设置数值与操作类型；已配置的行显示当前设置。</p>
  */
 public class AttributeListScreen extends UiScreen {
 
-    private static final int ROW_H = 22;
-    private static final int ROW_STEP = 26;
-    private static final int HEADER_H = 52;
-    private static final int FOOTER_H = 38;
+    private static final int HEADER = 52;
+    private static final int FOOTER = 38;
+    private static final int ROW_H = 24;
 
     private final Screen parent;
     private final Consumer<List<String>> onChange;
@@ -43,12 +41,10 @@ public class AttributeListScreen extends UiScreen {
     private final Map<String, CustomAttributes.Spec> selected = new LinkedHashMap<>();
     private final List<ResourceLocation> all;
     private final List<ResourceLocation> visible = new ArrayList<>();
-    private UiEditBox searchBox;
-    private UiButton doneBtn;
-    private UiButton clearBtn;
+
+    private UiTextField searchBox;
+    private UiList<ResourceLocation> list;
     private String lastSearch = "";
-    private int scroll, scrollMax;
-    private int listX1, listX2, listTop, listBot;
 
     public AttributeListScreen(Screen parent, List<String> initial, Consumer<List<String>> onChange) {
         super(Component.translatable("config.eternal_heart.attribute_list.title"));
@@ -88,29 +84,37 @@ public class AttributeListScreen extends UiScreen {
 
     @Override
     protected void init() {
-        layoutPanel(620, 500, 320, 260);
-        listX1 = panelX + 16;
-        listX2 = panelX + panelW - 16;
-        listTop = panelY + HEADER_H + 38;
-        listBot = panelY + panelH - FOOTER_H - 8;
+        clearWidgets();
+        headerH = HEADER;
+        footerH = FOOTER;
+        layoutPanel(640, 500, 340, 280);
 
-        searchBox = new UiEditBox(this.font, listX1, panelY + HEADER_H + 10, listX2 - listX1, 20,
-                Component.translatable("config.eternal_heart.attribute_list.search_hint"));
-        searchBox.setMaxLength(48);
-        searchBox.setValue(lastSearch);
-        searchBox.setResponder(s -> {
-            lastSearch = s;
-            rebuild();
-        });
-        this.addRenderableWidget(searchBox);
+        int x1 = contentLeft();
+        int x2 = contentRight();
 
-        int footerTop = panelY + panelH - FOOTER_H;
-        doneBtn = this.addRenderableWidget(UiButton.primary(
-                panelX + panelW - 16 - 76, footerTop + 8, 76, 22,
+        searchBox = add(new UiTextField(x1, panelY + HEADER + 8, x2 - x1, 20)
+                .setHint(Component.translatable("config.eternal_heart.attribute_list.search_hint"))
+                .setMaxLength(48)
+                .setText(lastSearch)
+                .setResponder(text -> {
+                    lastSearch = text;
+                    rebuild();
+                }));
+
+        int top = searchBox.getY() + 28;
+        int bottom = footerTop() - 8;
+        list = add(new UiList<ResourceLocation>(x1, top, x2 - x1, bottom - top))
+                .setRowMetrics(ROW_H, 2)
+                .setEmptyText(tr("empty"))
+                .setPainter(this::paintRow)
+                .setOnClick((index, mx, my, button) -> {
+                    ResourceLocation id = list.get(index);
+                    if (id != null) Minecraft.getInstance().setScreen(new AttributeValueScreen(this, id));
+                });
+
+        add(UiButton.primary(panelX + panelW - 16 - 76, footerTop() + 8, 76, 22,
                 Component.translatable("config.eternal_heart.attribute_list.done"), this::onClose));
-
-        clearBtn = this.addRenderableWidget(UiButton.danger(
-                panelX + panelW - 16 - 76 - 8 - 64, footerTop + 8, 64, 22,
+        add(UiButton.danger(panelX + panelW - 16 - 76 - 8 - 64, footerTop() + 8, 64, 22,
                 Component.translatable("config.eternal_heart.attribute_list.clear"), () -> {
                     selected.clear();
                     push();
@@ -121,117 +125,68 @@ public class AttributeListScreen extends UiScreen {
 
     private void rebuild() {
         visible.clear();
-        String q = lastSearch == null ? "" : lastSearch.trim().toLowerCase(Locale.ROOT);
+        String query = lastSearch == null ? "" : lastSearch.trim().toLowerCase(Locale.ROOT);
         for (ResourceLocation id : all) {
-            if (q.isEmpty() || matches(id, q)) visible.add(id);
+            if (query.isEmpty() || matches(id, query)) visible.add(id);
         }
-        scroll = 0;
-        scrollMax = Math.max(0, visible.size() * ROW_STEP - 6 - (listBot - listTop));
+        list.setItems(visible);
     }
 
-    private boolean matches(ResourceLocation id, String q) {
-        if (id.toString().toLowerCase(Locale.ROOT).contains(q)) return true;
+    private boolean matches(ResourceLocation id, String query) {
+        if (id.toString().toLowerCase(Locale.ROOT).contains(query)) return true;
         String key = CustomAttributes.displayNameKey(id);
-        return Component.translatable(key).getString().toLowerCase(Locale.ROOT).contains(q);
+        return Component.translatable(key).getString().toLowerCase(Locale.ROOT).contains(query);
     }
 
     // ===================== 渲染 =====================
 
-    @Override
-    public void render(GuiGraphics g, int mx, int my, float pt) {
-        renderBackground(g);
-        drawPanel(g);
-        drawHeader(g, Component.translatable("config.eternal_heart.attribute_list.title"),
-                Component.translatable("config.eternal_heart.attribute_list.hint"), HEADER_H);
+    private void paintRow(GuiGraphics g, ResourceLocation id, int index, int rowX, int rowY, int rowW, int rowH,
+                          float hover, boolean active) {
+        CustomAttributes.Spec spec = selected.get(id.toString());
+        boolean configured = spec != null;
+        UiTheme.cardFade(g, rowX, rowY, rowW, rowH, UiTheme.R_SM, hover, configured);
+        // 左侧色条：已配置 = 青绿，未配置 = 灰
+        UiTheme.roundRect(g, rowX + 6, rowY + 6, 3, rowH - 12, 1,
+                configured ? UiTheme.ACCENT : 0x40FFFFFF);
 
-        g.enableScissor(listX1, listTop, listX2, listBot);
-        renderRows(g, mx, my);
-        g.disableScissor();
-        drawScrollbar(g, listTop, listBot, scroll, scrollMax, Math.max(1, visible.size() * ROW_STEP));
+        String name = Component.translatable(CustomAttributes.displayNameKey(id)).getString();
+        g.drawString(this.font, trim(name, 180), rowX + 16, rowY + (rowH - 8) / 2,
+                configured ? UiTheme.ACCENT : UiTheme.TEXT, false);
 
-        drawFooterDivider(g, FOOTER_H);
-        g.drawString(this.font, tr("count", selected.size()),
-                panelX + 16, panelY + panelH - FOOTER_H + 15, UiTheme.TEXT_MUTED);
+        String status = configured
+                ? Numbers.format(spec.value()) + " " + CustomAttributes.operationName(spec.operation())
+                : tr("not_set");
+        int statusW = Math.min(150, this.font.width(status));
+        int statusX = rowX + rowW - 12 - statusW;
+        if (configured) {
+            UiTheme.chip(g, statusX - 7, rowY + (rowH - 14) / 2, statusW + 14, 14,
+                    UiTheme.ACCENT_SOFT, UiTheme.withAlpha(UiTheme.ACCENT_DIM, 0x66));
+        }
+        g.drawString(this.font, trim(status, 150), statusX, rowY + (rowH - 8) / 2,
+                configured ? UiTheme.ACCENT : UiTheme.TEXT_MUTED, false);
 
-        super.render(g, mx, my, pt);
+        // ID 填满名称与状态之间的空隙
+        int idX = rowX + 200;
+        int idW = Math.max(24, statusX - 12 - idX);
+        g.drawString(this.font, trim(id.toString(), idW), idX, rowY + (rowH - 8) / 2,
+                UiTheme.TEXT_MUTED, false);
     }
 
-    private void renderRows(GuiGraphics g, int mx, int my) {
-        for (int i = 0; i < visible.size(); i++) {
-            int y = listTop - scroll + i * ROW_STEP;
-            if (y + ROW_H <= listTop || y >= listBot) continue;
-
-            ResourceLocation id = visible.get(i);
-            CustomAttributes.Spec spec = selected.get(id.toString());
-            boolean hover = mx >= listX1 && mx < listX2 && my >= y && my < y + ROW_H;
-
-            UiTheme.card(g, listX1, y, listX2 - listX1, ROW_H, 5, hover, spec != null);
-            // 左侧色条：已配置 = 青绿，未配置 = 灰
-            UiTheme.roundRect(g, listX1 + 6, y + 6, 3, ROW_H - 12, 1,
-                    spec != null ? UiTheme.ACCENT : 0x40FFFFFF);
-
-            String name = Component.translatable(CustomAttributes.displayNameKey(id)).getString();
-            g.drawString(this.font, trim(name, 190), listX1 + 16, y + 7,
-                    spec != null ? UiTheme.ACCENT : UiTheme.TEXT);
-            g.drawString(this.font, trim(id.toString(), listX2 - listX1 - 320), listX1 + 216, y + 7,
-                    UiTheme.TEXT_MUTED);
-
-            String status = spec == null ? tr("not_set")
-                    : Numbers.format(spec.value()) + " " + CustomAttributes.operationName(spec.operation());
-            int statusW = Math.min(150, this.font.width(status));
-            int statusX = listX2 - 12 - statusW;
-            if (spec != null) {
-                UiTheme.roundRect(g, statusX - 7, y + 4, statusW + 14, 14, 7, UiTheme.ACCENT_SOFT);
-                g.drawString(this.font, trim(status, 150), statusX, y + 7, UiTheme.ACCENT);
-            } else {
-                g.drawString(this.font, trim(status, 150), statusX, y + 7, UiTheme.TEXT_MUTED);
-            }
-        }
-        if (visible.isEmpty()) {
-            drawEmpty(g, tr("empty"), listX1, listTop, listX2, listBot);
-        }
+    @Override
+    protected void renderContent(GuiGraphics g, int mouseX, int mouseY, float partial) {
+        drawHeader(g, Component.translatable("config.eternal_heart.attribute_list.title"),
+                Component.translatable("config.eternal_heart.attribute_list.hint"), HEADER);
+        renderWidgets(g, mouseX, mouseY, partial);
+        drawFooterDivider(g, FOOTER);
+        drawStatus(g, tr("count", selected.size()), UiTheme.TEXT_MUTED, panelW - 200);
     }
 
     private String tr(String key, Object... args) {
         return Component.translatable("config.eternal_heart.attribute_list." + key, args).getString();
     }
 
-    // ===================== 输入处理 =====================
-
-    @Override
-    public boolean mouseClicked(double mxd, double myd, int button) {
-        if (button == 0 && mxd >= listX1 && mxd < listX2 && myd >= listTop && myd < listBot) {
-            int idx = (int) ((myd - listTop + scroll) / ROW_STEP);
-            if (idx >= 0 && idx < visible.size()) {
-                Minecraft.getInstance().setScreen(new AttributeValueScreen(this, visible.get(idx)));
-                return true;
-            }
-        }
-        return super.mouseClicked(mxd, myd, button);
-    }
-
-    @Override
-    public boolean mouseScrolled(double mx, double my, double delta) {
-        scroll = (int) Math.max(0, Math.min(scrollMax, scroll - delta * ROW_STEP));
-        return true;
-    }
-
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE && searchBox != null && searchBox.isFocused()) {
-            searchBox.setFocused(false);
-            return true;
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
-    }
-
     @Override
     public void onClose() {
         Minecraft.getInstance().setScreen(parent);
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
     }
 }

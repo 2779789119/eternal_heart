@@ -74,6 +74,27 @@ public abstract class LivingEntityMixin {
     }
 
     /**
+     * 死亡判定的最终硬拦截 —— 拒绝「绕过伤害管线」的致死调用。
+     *
+     * <p>为什么只拦 {@code setHealth} 不够：写血被拒绝后，调用方通常仍会继续
+     * {@code die()}（先写 0 血再调死亡方法是标准写法）。只拦写入，玩家照样会死，
+     * 区别只是「满血去世」。这里在 {@code die} 的最头部取消，
+     * 判定前提是「血量仍大于 0」——正常伤害致死时血量已经是 0，完全不受影响。</p>
+     *
+     * <p>它比收尾阶段的 {@code LivingDeathEvent} 更早：此时死亡事件还没 post，
+     * 背包不会被清空、也不会产生「已判死但被复活」的中间态。</p>
+     *
+     * <p>判定与恢复全部由 {@link AegisSystem#blockInstantDeath} 承担，本注入只做转发。</p>
+     */
+    @Inject(method = "die", at = @At("HEAD"), cancellable = true)
+    private void eternalHeart$blockInstantDeath(DamageSource source, CallbackInfo ci) {
+        if (!((Object) this instanceof Player player)) return;
+        if (AegisSystem.blockInstantDeath(player, source)) {
+            ci.cancel();
+        }
+    }
+
+    /**
      * 攻击压制·禁疗 —— 被压制的实体无法通过 {@code heal} 回血。
      *
      * <p>原版把「所有」回血都收敛到 {@code LivingEntity#heal(float)}：再生效果、
